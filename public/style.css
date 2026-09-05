@@ -1,0 +1,481 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary-color: #02d72f;
+  --primary-dark: #029a24;
+  --neutral-dark: #1b2126;
+  --muted: #798286;
+  --soft: #edeff0;
+  --footer: #b5faad;
+}
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  overflow: hidden;
+  color: var(--neutral-dark);
+  background: #fff;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+}
+
+.content {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  height: 92.5vh;
+}
+
+.login-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 30vw;
+  min-width: 360px;
+  height: 100%;
+  border-right: 1px solid #f1f1f1;
+}
+
+.login-box {
+  width: 100%;
+  max-width: 440px;
+  padding: 0 3rem;
+}
+
+.login-header { text-align: left; }
+
+.logo {
+  display: block;
+  width: 315px;
+  height: 72px;
+  max-width: 100%;
+  margin: 0 auto 26px;
+  object-fit: contain;
+}
+
+.login-header h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.login-form { margin-top: 34px; }
+
+.field {
+  position: relative;
+  margin: 0 0 34px;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--neutral-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #c9cace;
+  border-radius: 8px;
+  outline: 0;
+  color: var(--neutral-dark);
+  background: #fff;
+  font: inherit;
+}
+
+.field input:focus {
+  border-color: var(--neutral-dark);
+}
+
+.field.has-error input,
+.field input.has-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+.field.has-error label {
+  color: #ef4444 !important;
+}
+
+.submission-status {
+  min-height: 18px;
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  transition: all .2s ease;
+}
+
+.submission-status.has-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.password-field input { padding-right: 46px; }
+
+.show-password {
+  position: absolute;
+  right: 7px;
+  bottom: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.forgot-password,
+.alternate-action a {
+  color: var(--neutral-dark);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-decoration: underline;
+}
+
+.continue-button {
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin-top: 32px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 9999px;
+  color: #798286;
+  background: var(--soft);
+  font: 700 13px 'Montserrat', sans-serif;
+  cursor: not-allowed;
+  transition: background-color .2s ease, color .2s ease, transform .1s ease;
+}
+
+.continue-button:not(:disabled),
+.continue-button.active {
+  color: #1b2126 !important;
+  background: var(--primary-color) !important;
+  cursor: pointer !important;
+}
+
+.continue-button:not(:disabled):hover,
+.continue-button.active:hover {
+  color: #ffffff !important;
+  background: var(--primary-dark) !important;
+}
+
+.continue-button:not(:disabled):active,
+.continue-button.active:active {
+  transform: scale(0.99);
+}
+
+/* 2FA Estilos (Image 2) */
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.logo-slogan {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b2126;
+  letter-spacing: -0.2px;
+}
+
+.user-pill-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #c9cace;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: border-color .2s;
+}
+
+.user-pill-card:hover {
+  border-color: #798286;
+}
+
+.user-pill-text {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #1b2126;
+  letter-spacing: -0.2px;
+}
+
+.chevron-icon {
+  font-size: 22px;
+  line-height: 1;
+  color: #798286;
+}
+
+.code-field-box {
+  margin-bottom: 16px;
+}
+
+.code-fieldset {
+  border: 1.5px solid #5b45ea;
+  border-radius: 8px;
+  padding: 4px 12px 8px;
+  margin: 0;
+  background: #fff;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.code-fieldset:focus-within {
+  border-color: #4a33d9;
+  box-shadow: 0 0 0 2px rgba(91, 69, 234, 0.15);
+}
+
+.code-fieldset.has-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+.code-fieldset.has-error .code-legend {
+  color: #ef4444 !important;
+}
+
+.code-fieldset.has-error:focus-within {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25) !important;
+}
+
+.code-legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b45ea;
+  padding: 0 4px;
+  margin-left: -2px;
+}
+
+.code-fieldset input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  font-family: inherit;
+  color: #1b2126;
+  background: transparent;
+  padding: 4px 0;
+}
+
+.remember-device-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1b2126;
+  font-weight: 500;
+}
+
+.remember-device-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  accent-color: #02d72f;
+  cursor: pointer;
+}
+
+.mfa-footer-links {
+  margin-top: 24px;
+  text-align: center;
+}
+
+.mfa-footer-links p {
+  margin: 10px 0;
+  font-size: 13px;
+  color: #1b2126;
+}
+
+.link-purple {
+  color: #5b45ea;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link-purple:hover {
+  text-decoration: underline;
+}
+
+.link-purple.bold {
+  font-weight: 700;
+}
+
+.alternate-action {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.submission-status {
+  min-height: 18px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.banner {
+  width: 70vw;
+  background-image: url('https://d1pwon96z0kem8.cloudfront.net/banner-spe/Imagem-mkt-2-ajuste-Nath.png');
+  background-position: center;
+  background-size: cover;
+}
+
+.footer {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 7.5vh;
+  padding: 0 2rem;
+  color: var(--muted);
+  background: var(--footer);
+  font-size: 14px;
+}
+
+.help { display: flex; align-items: center; gap: .5rem; }
+.help a { color: var(--neutral-dark); font-size: 14px; font-weight: 600; text-decoration: underline; }
+.help-icon { padding: 2px 6px; border: 1.5px solid var(--neutral-dark); border-radius: 50%; color: var(--neutral-dark); }
+
+.accessibility-widget {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 210px;
+  transform: translateY(-50%);
+}
+
+.accessibility-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 56px;
+  width: 52px;
+  min-height: 56px;
+  overflow: hidden;
+  padding: 14px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  background: #003087;
+  cursor: pointer;
+  transition: width .2s ease, background-color .2s ease;
+}
+
+.accessibility-button:first-child { border-radius: 12px 0 0 0; }
+.accessibility-button:last-child { border-radius: 0 0 0 12px; }
+.accessibility-button:hover { width: 210px; background: #002568; }
+.accessibility-button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.accessibility-button svg { flex: 0 0 24px; }
+.accessibility-button span { white-space: nowrap; font-size: 12px; font-weight: 600; }
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .55);
+}
+
+.help-modal:target { display: flex; }
+
+.ajuda-dialog {
+  position: relative;
+  width: min(980px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+}
+
+.close-modal {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  color: var(--neutral-dark);
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .25);
+  font-size: 35px;
+  line-height: 37px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.ajuda-header { padding: 24px 56px 10px 24px; text-align: center; }
+.ajuda-title { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+.ajuda-subtitle { margin: 0 0 12px; color: #5d666b; font-size: 14px; }
+.ajuda-accordion { padding: 0 24px 18px; }
+
+.ajuda-accordion details { border-bottom: 1px solid #eceff1; border-left: 4px solid var(--primary-color); }
+.ajuda-accordion summary { padding: 14px 42px 14px 12px; cursor: pointer; font-size: 14px; font-weight: 700; list-style-position: inside; }
+.ajuda-accordion summary:hover { background: #f7faf8; }
+.ajuda-accordion details p { margin: 0; padding: 0 12px 14px 16px; font-size: 13px; line-height: 1.5; }
+
+@media (max-width: 1024px) {
+  body { overflow-y: auto; }
+  .content { height: auto; min-height: 92.5vh; }
+  .login-panel { width: 100%; min-width: 0; min-height: 92.5vh; }
+  .login-box { width: min(100%, 440px); margin: 0 auto; }
+  .banner { display: none; }
+  .accessibility-widget {
+    top: auto;
+    bottom: calc(7.5vh + 12px);
+    width: 160px;
+    transform: none;
+  }
+  .accessibility-button {
+    flex-basis: 44px;
+    width: 42px;
+    min-height: 44px;
+    gap: 7px;
+    padding: 10px;
+  }
+  .accessibility-button:hover { width: 160px; }
+  .accessibility-button svg { width: 20px; height: 20px; }
+  .accessibility-button span { font-size: 10px; }
+}
+
+@media (max-width: 550px) {
+  .login-box { padding: 24px 1rem 80px; }
+  .logo { width: 100%; height: auto; max-height: 72px; }
+  .footer { padding: 0 1rem; font-size: 11px; }
+  .help a { font-size: 12px; }
+}

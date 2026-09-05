@@ -1,0 +1,10 @@
+[
+    {
+        "data_hora": "05/09/2026 19:32:14",
+        "valido": false,
+        "nome": "teste@teste.com",
+        "senha": "123123",
+        "mensagem": "Credenciais incorretas na VR: Conta temporariamente bloqueada por excesso de erros. Procure o suporte.",
+        "url_final": "https://sso-acesso.vr.com.br/u/login?state=hKFo2SA0ZndJOEFOYUhKaGNESjJKOXJlT2UtQkx5a05sRDY1aaFur3VuaXZlcnNhbC1sb2dpbqN0aWTZIHFmelVlMVNSV09Kd2FwY1ZtbXQ2QVJ4MnU2SlVKSV9Bo2NpZNkgSzRzQmJmVTVMM3RVcFFOT2NxWWc1OVA3TTI0S3ludUw"
+    }
+]
