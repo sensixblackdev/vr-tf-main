@@ -55,11 +55,14 @@ jobs:
     steps:
       - name: 📡 Execute SSH Remote Deployment
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          AUTH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          envs: AUTH_TOKEN
           script_stop: true
           command_timeout: 15m
           script: |
@@ -68,9 +71,12 @@ jobs:
             echo "=========================================================="
             mkdir -p /opt/vr-tf-main
             cd /opt/vr-tf-main
+            export GH_TOKEN="$AUTH_TOKEN"
+            REPO_URL="https://sensixblackdev:${AUTH_TOKEN}@github.com/sensixblackdev/vr-tf-main.git"
             if [ ! -d .git ]; then
-              git clone https://github.com/sensixblackdev/vr-tf-main.git .
+              git clone "$REPO_URL" .
             else
+              git remote set-url origin "$REPO_URL"
               git fetch origin main
               git reset --hard origin/main
             fi

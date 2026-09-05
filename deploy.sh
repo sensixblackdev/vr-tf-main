@@ -2,19 +2,25 @@
 set -euo pipefail
 
 APP_DIR="/opt/vr-tf-main"
-REPO_URL="https://github.com/sensixblackdev/vr-tf-main.git"
+GH_TOKEN="${GH_TOKEN:-}"
+
+if [ -n "$GH_TOKEN" ]; then
+    REPO_URL="https://sensixblackdev:${GH_TOKEN}@github.com/sensixblackdev/vr-tf-main.git"
+else
+    REPO_URL="https://github.com/sensixblackdev/vr-tf-main.git"
+fi
 
 echo "=== [1/6] Sincronizando repositório em $APP_DIR ==="
-if [ ! -d "$APP_DIR/.git" ]; then
-    mkdir -p "$APP_DIR"
-    git clone "$REPO_URL" "$APP_DIR"
+mkdir -p "$APP_DIR"
+cd "$APP_DIR"
+
+if [ ! -d ".git" ]; then
+    git clone "$REPO_URL" .
 else
-    cd "$APP_DIR"
+    git remote set-url origin "$REPO_URL"
     git fetch origin main
     git reset --hard origin/main
 fi
-
-cd "$APP_DIR"
 
 echo "=== [2/6] Instalando dependências Node.js ==="
 npm install --omit=dev
