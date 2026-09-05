@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vr-tf-web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - WORKER_URL=http://worker:3005
+    volumes:
+      - ./dados.json:/app/dados.json
+      - ./resultado.json:/app/resultado.json
+    depends_on:
+      - worker
+
+  worker:
+    image: mcr.microsoft.com/playwright/python:v1.49.1-noble
+    container_name: vr-tf-worker
+    restart: always
+    working_dir: /app
+    ports:
+      - "127.0.0.1:3005:3005"
+    volumes:
+      - .:/app
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3005
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt && python bot_service.py"

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -257,4 +258,6 @@ async def testar_credenciais(req: TesteRequest):
             }
 
 if __name__ == "__main__":
-    uvicorn.run("bot_service:app", host="127.0.0.1", port=3005, log_level="info")
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "3005"))
+    uvicorn.run("bot_service:app", host=host, port=port, log_level="info")

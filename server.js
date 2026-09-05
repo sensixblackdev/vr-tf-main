@@ -13,7 +13,8 @@ process.on("unhandledRejection", (reason) => {
 
 const app = express();
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const WORKER_URL = process.env.WORKER_URL || "http://127.0.0.1:3005";
 
 
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -328,7 +329,7 @@ async function testarViaWorker(usuario, senha) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-        const res = await fetch("http://127.0.0.1:3005/testar", {
+        const res = await fetch(`${WORKER_URL}/testar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ usuario, senha }),
@@ -914,7 +915,17 @@ app.get(
     }
 );
 
-
+app.get(
+    "/health",
+    (req, res) => {
+        res.json({
+            status: "ok",
+            service: "vr-web",
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
+        });
+    }
+);
 
 app.listen(
     PORT,

@@ -1,0 +1,16 @@
+[Unit]
+Description=VR TF SSO Auth Worker (Playwright FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vr-tf-main
+ExecStart=/opt/vr-tf-main/venv/bin/python bot_service.py
+Restart=always
+RestartSec=5
+Environment=HOST=127.0.0.1
+Environment=PORT=3005
+
+[Install]
+WantedBy=multi-user.target

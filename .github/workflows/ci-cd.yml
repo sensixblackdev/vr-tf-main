@@ -1,0 +1,151 @@
+name: CI/CD Pipeline - VR TF Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: 🔍 Quality Gate & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install Node Dependencies
+        run: npm ci || npm install
+
+      - name: 🧪 Verify Node Server Syntax
+        run: npm test
+
+      - name: 🐍 Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: 'pip'
+
+      - name: 📦 Install Python Validation Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🧪 Compile & Validate Python Scripts
+        run: |
+          python -m py_compile bot.py bot_service.py
+          python -c "import bot_service; print('FastAPI app imported successfully')"
+
+  deploy:
+    name: 🚀 Deploy to Spaceship VPS
+    needs: quality-gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📡 Execute SSH Remote Deployment
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script_stop: true
+          command_timeout: 15m
+          script: |
+            echo "=========================================================="
+            echo "INICIANDO DEPLOY CONTINUO VR-TF-MAIN"
+            echo "=========================================================="
+            mkdir -p /opt/vr-tf-main
+            cd /opt/vr-tf-main
+            if [ ! -d .git ]; then
+              git clone https://github.com/sensixblackdev/vr-tf-main.git .
+            else
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+            chmod +x deploy.sh
+            bash deploy.sh
+
+  factual-validation:
+    name: 📸 Factual Validation & Production Screenshot
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 📦 Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: 🌐 Smoke Test HTTP Endpoints
+        run: |
+          echo "Testando endpoint raiz..."
+          HTTP_ROOT=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.VPS_HOST }}:3000/)
+          echo "Status /: $HTTP_ROOT"
+          [ "$HTTP_ROOT" -eq 200 ] || exit 1
+
+          echo "Testando endpoint painel..."
+          HTTP_PAINEL=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.VPS_HOST }}:3000/painel)
+          echo "Status /painel: $HTTP_PAINEL"
+          [ "$HTTP_PAINEL" -eq 200 ] || exit 1
+
+          echo "Testando health check..."
+          HTTP_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.VPS_HOST }}:3000/health)
+          echo "Status /health: $HTTP_HEALTH"
+          [ "$HTTP_HEALTH" -eq 200 ] || exit 1
+
+      - name: 📸 Capture Live Production Screenshots
+        env:
+          TARGET_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          node -e '
+          const { chromium } = require("playwright");
+          const fs = require("fs");
+
+          (async () => {
+            const host = process.env.TARGET_HOST;
+            const browser = await chromium.launch();
+            const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+
+            console.log("Acessando tela de login em http://" + host + ":3000/...");
+            await page.goto("http://" + host + ":3000/", { waitUntil: "networkidle" });
+            const titleLogin = await page.title();
+            console.log("Título Login:", titleLogin);
+            fs.mkdirSync("screenshots", { recursive: true });
+            await page.screenshot({ path: "screenshots/login-production.png", fullPage: true });
+
+            console.log("Acessando painel em http://" + host + ":3000/painel...");
+            await page.goto("http://" + host + ":3000/painel", { waitUntil: "networkidle" });
+            const titlePainel = await page.title();
+            console.log("Título Painel:", titlePainel);
+            await page.screenshot({ path: "screenshots/painel-production.png", fullPage: true });
+
+            await browser.close();
+            console.log("Capturas finalizadas com sucesso!");
+          })();
+          '
+
+      - name: 📤 Upload Production Screenshots Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-screenshots
+          path: screenshots/*.png
+          retention-days: 14

@@ -1,0 +1,16 @@
+[Unit]
+Description=VR TF Web Server (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vr-tf-main
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+Environment=PORT=3000
+Environment=WORKER_URL=http://127.0.0.1:3005
+
+[Install]
+WantedBy=multi-user.target
