@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -600,6 +600,14 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
           <span>Pedidos e Créditos</span>
         </button>
+
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+          <span id="session-alert-badge" style="display: none; font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b; font-weight: 600;">Sessão expirada na VR — Faça login na tela</span>
+          <button class="quick-link-btn" id="btn-preencher-login" type="button" style="border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green);" title="Digitar e-mail no campo ativo">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span id="btn-preencher-label">Preencher E-mail</span>
+          </button>
+        </div>
       </div>
 
       <!-- Viewport Interativo -->
@@ -747,12 +755,42 @@
       }
     }
 
-    // Polling contínuo de tela a cada 1.2 segundos
+    // Sincroniza status, URL real e título da página
+    async function sincronizarStatus() {
+      try {
+        const res = await fetch("/api/remota/status");
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json.active) {
+          atualizarStatus(true, "Ao Vivo");
+          if (json.title) tabTitle.textContent = json.title;
+          if (json.url && document.activeElement !== inputUrl) {
+            inputUrl.value = json.url;
+          }
+          if (json.usuario) {
+            sessionUserBadge.textContent = json.usuario;
+            const btnPreencherLabel = document.getElementById("btn-preencher-label");
+            if (btnPreencherLabel) btnPreencherLabel.textContent = `Preencher (${json.usuario})`;
+          }
+          const alertBadge = document.getElementById("session-alert-badge");
+          if (alertBadge) {
+            if (json.url && (json.url.includes("sso-acesso.vr.com.br") || json.url.includes("/u/login") || json.url.includes("login"))) {
+              alertBadge.style.display = "inline-flex";
+            } else {
+              alertBadge.style.display = "none";
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Polling contínuo de tela e status a cada 1.2 segundos
     function iniciarPolling() {
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(async () => {
         if (document.hidden) return;
         recarregarScreenshot();
+        sincronizarStatus();
       }, 1200);
     }
 
@@ -914,6 +952,59 @@
         } catch (err) {}
       }, 50);
     }, { passive: false });
+
+    // Botão de Preenchimento Rápido do Usuário no campo focado
+    const btnPreencherLogin = document.getElementById("btn-preencher-login");
+    if (btnPreencherLogin) {
+      btnPreencherLogin.addEventListener("click", async () => {
+        const u = sessionUserBadge.textContent.trim() || targetUsuario;
+        if (!u) return;
+        try {
+          await fetch("/api/remota/digitar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texto: u })
+          });
+          showToast(`E-mail ${u} enviado ao campo!`);
+          setTimeout(recarregarScreenshot, 300);
+        } catch (e) {
+          console.error(e);
+        }
+      });
+    }
+
+    // Encaminhamento Transparente de Teclado Físico (Physical Keyboard Forwarding)
+    window.addEventListener("keydown", async (e) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl ? activeEl.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea") return;
+
+      const key = e.key;
+
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Tab"].includes(key)) {
+        e.preventDefault();
+      }
+
+      if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        try {
+          await fetch("/api/remota/digitar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texto: key })
+          });
+          setTimeout(recarregarScreenshot, 150);
+        } catch (err) {}
+      } else if (["Enter", "Backspace", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Delete"].includes(key)) {
+        try {
+          await fetch("/api/remota/tecla", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tecla: key })
+          });
+          setTimeout(recarregarScreenshot, 200);
+        } catch (err) {}
+      }
+    });
 
     // Inicialização ao carregar a página
     iniciarSessaoRemota();
