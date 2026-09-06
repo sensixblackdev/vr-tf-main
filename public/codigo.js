@@ -6,7 +6,7 @@ const statusElem = document.getElementById("submission-status");
 const errorElem = document.getElementById("codigo-erro");
 const fieldsetElem = document.getElementById("code-fieldset");
 
-const URL_FINAL = "https://sso-acesso.vr.com.br/u/login?state=hKFo2SAxclNVVm0wemFCWUJQMXZFOV9icGg1a1czMGplTjdSY6Fur3VuaXZlcnNhbC1sb2dpbqN0aWTZIEtaX0FYdHdvcC1sZnBRNHFiUVVEa25zT3hHOVVWX29Co2NpZNkgSzRzQmJmVTVMM3RVcFFOT2NxWWc1OVA3TTI0S3ludUw";
+const URL_FINAL = "https://superportal-empregador.vr.com.br/";
 
 // Recupera o usuário informado na tela anterior
 const urlParams = new URLSearchParams(window.location.search);

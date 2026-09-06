@@ -440,18 +440,29 @@ async def injetar_2fa(req: Injetar2FARequest):
 
         cookies = []
         if resultado_2fa:
-            logger.info(f"[WARM WORKER] 🎉 2FA APROVADO para {usuario}! Aguardando conclusão do redirecionamento final...")
+            logger.info(f"[WARM WORKER] 🎉 2FA APROVADO para {usuario}! Aguardando redirecionamento até superportal-empregador...")
             try:
-                await asyncio.sleep(0.8)
+                # Aguarda o redirecionamento sair de authorize/resume e atingir o portal do empregador
+                for _ in range(25): # até ~7.5s
+                    if page.is_closed():
+                        break
+                    curr_url = page.url
+                    if "superportal" in curr_url or "empregador" in curr_url:
+                        break
+                    await asyncio.sleep(0.3)
+
                 if not page.is_closed():
-                    await page.wait_for_load_state("networkidle", timeout=2500)
+                    await page.wait_for_load_state("networkidle", timeout=3000)
             except Exception:
                 pass
 
             try:
                 url_final = page.url if not page.is_closed() else url_atual
             except Exception:
-                url_final = "https://superportal.vr.com.br/"
+                url_final = "https://superportal-empregador.vr.com.br/"
+
+            if not url_final or "authorize/resume" in url_final or "sso-acesso" in url_final:
+                url_final = "https://superportal-empregador.vr.com.br/"
 
             logger.info(f"[WARM WORKER] URL Final da Sessão: {url_final}. Capturando cookies...")
             try:

