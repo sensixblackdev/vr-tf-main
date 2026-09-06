@@ -627,7 +627,11 @@
       <div style="padding: 16px 20px; overflow-y: auto; flex: 1;">
         <textarea id="modal-cookies-json" readonly style="width: 100%; height: 280px; background: #09090b; border: 1px solid var(--border); border-radius: 8px; color: #a1a1aa; font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 12px; resize: none;"></textarea>
       </div>
-      <div style="padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+      <div style="padding: 14px 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
+        <a id="btn-modal-abrir-sessao" href="#" target="_blank" class="btn btn-secondary" style="border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span>Abrir Central de Acesso</span>
+        </a>
         <button id="btn-copiar-modal-cookies" type="button" class="btn btn-primary" style="background: var(--accent-green); color: #09090b; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
           <span>Copiar Cookies JSON</span>
@@ -642,6 +646,6 @@
     <span id="toast-msg">Copiado para a área de transferência!</span>
   </div>
 
-  <script src="painel.js?v=20260905_1911"></script>
+  <script src="painel.js?v=20260905_2245"></script>
 </body>
 </html>

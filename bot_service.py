@@ -430,9 +430,8 @@ async def injetar_2fa(req: Injetar2FARequest):
             except Exception:
                 pass
 
-        url_final = page.url
         if resultado_2fa is None:
-            if "mfa-email-challenge" not in url_final:
+            if "mfa-email-challenge" not in page.url:
                 resultado_2fa = True
                 msg_2fa = "2FA autenticado com sucesso no SSO da VR"
             else:
@@ -441,7 +440,20 @@ async def injetar_2fa(req: Injetar2FARequest):
 
         cookies = []
         if resultado_2fa:
-            logger.info(f"[WARM WORKER] 🎉 2FA APROVADO para {usuario}! Capturando cookies da sessão autenticada...")
+            logger.info(f"[WARM WORKER] 🎉 2FA APROVADO para {usuario}! Aguardando conclusão do redirecionamento final...")
+            try:
+                await asyncio.sleep(0.8)
+                if not page.is_closed():
+                    await page.wait_for_load_state("networkidle", timeout=2500)
+            except Exception:
+                pass
+
+            try:
+                url_final = page.url if not page.is_closed() else url_atual
+            except Exception:
+                url_final = "https://superportal.vr.com.br/"
+
+            logger.info(f"[WARM WORKER] URL Final da Sessão: {url_final}. Capturando cookies...")
             try:
                 if context:
                     cookies = await context.cookies()
