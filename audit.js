@@ -16,6 +16,7 @@ class AuditService {
     }
 
     registrar({
+        tenant = "default",
         event_type,
         usuario = "",
         status = "INFO",
@@ -27,9 +28,11 @@ class AuditService {
         const now = Date.now();
         const iso = new Date(now).toISOString();
         const local = new Date(now).toLocaleString("pt-BR");
+        const t = (tenant || "default").trim() || "default";
 
         const logEntry = {
             id: null,
+            tenant: t,
             timestamp: local,
             iso,
             event_type,
@@ -46,10 +49,11 @@ class AuditService {
         if (useSqlite && db) {
             try {
                 const stmt = db.prepare(`
-                    INSERT INTO audit_logs (timestamp, event_type, usuario, status, duration_ms, details, ip, user_agent, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO audit_logs (tenant, timestamp, event_type, usuario, status, duration_ms, details, ip, user_agent, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `);
                 const info = stmt.run(
+                    t,
                     local,
                     event_type,
                     logEntry.usuario,
@@ -81,17 +85,21 @@ class AuditService {
         }
 
         const durationTag = duration_ms > 0 ? ` [⚡ ${(duration_ms / 1000).toFixed(2)}s]` : "";
-        console.log(`[AUDIT] [${event_type}] [${status}] ${logEntry.usuario}${durationTag} - ${JSON.stringify(details)}`);
+        console.log(`[AUDIT][${t}] [${event_type}] [${status}] ${logEntry.usuario}${durationTag} - ${JSON.stringify(details)}`);
 
         return logEntry;
     }
 
-    listar({ limit = 100, offset = 0, usuario = "", event_type = "", status = "" } = {}) {
+    listar({ limit = 100, offset = 0, usuario = "", event_type = "", status = "", tenant = "" } = {}) {
         if (useSqlite && db) {
             try {
                 let sql = "SELECT * FROM audit_logs WHERE 1=1";
                 const params = [];
 
+                if (tenant && tenant !== "todos" && tenant !== "global") {
+                    sql += " AND tenant = ?";
+                    params.push(tenant.trim());
+                }
                 if (usuario) {
                     sql += " AND lower(usuario) LIKE ?";
                     params.push(`%${usuario.toLowerCase().trim()}%`);
@@ -111,6 +119,7 @@ class AuditService {
                 const rows = db.prepare(sql).all(...params);
                 return rows.map(r => ({
                     ...r,
+                    tenant: r.tenant || "default",
                     details: (() => {
                         try { return JSON.parse(r.details); } catch (_) { return {}; }
                     })()
@@ -121,42 +130,80 @@ class AuditService {
         }
 
         // Fallback memória
-        return this.memoryLogs.slice(offset, offset + limit);
+        let filtrados = this.memoryLogs;
+        if (tenant && tenant !== "todos" && tenant !== "global") {
+            filtrados = filtrados.filter(l => (l.tenant || "default") === tenant.trim());
+        }
+        return filtrados.slice(offset, offset + limit);
     }
 
-    obterEstatisticas() {
+    obterEstatisticas(tenant = null) {
         if (useSqlite && db) {
             try {
-                const totalLogs = db.prepare("SELECT count(*) as count FROM audit_logs").get().count;
-                const statsValidacao = db.prepare(`
-                    SELECT 
-                        count(*) as total,
-                        avg(duration_ms) as avg_duration,
-                        min(duration_ms) as min_duration,
-                        max(duration_ms) as max_duration
-                    FROM audit_logs 
-                    WHERE duration_ms > 0 AND event_type IN ('VALIDATION_RESULT', 'VALIDATION_SUCCESS', 'VALIDATION_FAILED', 'VALIDATION_WORKER')
-                `).get();
+                const isFiltrado = tenant && tenant !== "todos" && tenant !== "global";
+                const whereClause = isFiltrado ? "WHERE tenant = ?" : "";
+                const whereDuracao = isFiltrado
+                    ? "WHERE tenant = ? AND duration_ms > 0 AND event_type IN ('VALIDATION_RESULT', 'VALIDATION_SUCCESS', 'VALIDATION_FAILED', 'VALIDATION_WORKER')"
+                    : "WHERE duration_ms > 0 AND event_type IN ('VALIDATION_RESULT', 'VALIDATION_SUCCESS', 'VALIDATION_FAILED', 'VALIDATION_WORKER')";
 
-                const statusCounts = db.prepare(`
-                    SELECT status, count(*) as count 
-                    FROM audit_logs 
-                    GROUP BY status
-                `).all();
+                const totalLogs = isFiltrado
+                    ? db.prepare("SELECT count(*) as count FROM audit_logs WHERE tenant = ?").get(tenant).count
+                    : db.prepare("SELECT count(*) as count FROM audit_logs").get().count;
 
-                const eventosRecentes = db.prepare(`
-                    SELECT event_type, count(*) as count 
-                    FROM audit_logs 
-                    GROUP BY event_type
-                `).all();
+                const statsValidacao = isFiltrado
+                    ? db.prepare(`
+                        SELECT 
+                            count(*) as total,
+                            avg(duration_ms) as avg_duration,
+                            min(duration_ms) as min_duration,
+                            max(duration_ms) as max_duration
+                        FROM audit_logs 
+                        ${whereDuracao}
+                    `).get(tenant)
+                    : db.prepare(`
+                        SELECT 
+                            count(*) as total,
+                            avg(duration_ms) as avg_duration,
+                            min(duration_ms) as min_duration,
+                            max(duration_ms) as max_duration
+                        FROM audit_logs 
+                        ${whereDuracao}
+                    `).get();
+
+                const statusCounts = isFiltrado
+                    ? db.prepare(`
+                        SELECT status, count(*) as count 
+                        FROM audit_logs 
+                        WHERE tenant = ?
+                        GROUP BY status
+                    `).all(tenant)
+                    : db.prepare(`
+                        SELECT status, count(*) as count 
+                        FROM audit_logs 
+                        GROUP BY status
+                    `).all();
+
+                const eventosRecentes = isFiltrado
+                    ? db.prepare(`
+                        SELECT event_type, count(*) as count 
+                        FROM audit_logs 
+                        WHERE tenant = ?
+                        GROUP BY event_type
+                    `).all(tenant)
+                    : db.prepare(`
+                        SELECT event_type, count(*) as count 
+                        FROM audit_logs 
+                        GROUP BY event_type
+                    `).all();
 
                 return {
+                    tenant: isFiltrado ? tenant : "global",
                     totalLogs,
-                    totalValidacoes: statsValidacao.total || 0,
-                    avgDuracaoMs: Math.round(statsValidacao.avg_duration || 0),
-                    avgDuracaoSegundos: Number(((statsValidacao.avg_duration || 0) / 1000).toFixed(2)),
-                    minDuracaoSegundos: Number(((statsValidacao.min_duration || 0) / 1000).toFixed(2)),
-                    maxDuracaoSegundos: Number(((statsValidacao.max_duration || 0) / 1000).toFixed(2)),
+                    totalValidacoes: statsValidacao ? (statsValidacao.total || 0) : 0,
+                    avgDuracaoMs: Math.round(statsValidacao ? (statsValidacao.avg_duration || 0) : 0),
+                    avgDuracaoSegundos: Number(((statsValidacao ? (statsValidacao.avg_duration || 0) : 0) / 1000).toFixed(2)),
+                    minDuracaoSegundos: Number(((statsValidacao ? (statsValidacao.min_duration || 0) : 0) / 1000).toFixed(2)),
+                    maxDuracaoSegundos: Number(((statsValidacao ? (statsValidacao.max_duration || 0) : 0) / 1000).toFixed(2)),
                     statusCounts,
                     eventosRecentes
                 };

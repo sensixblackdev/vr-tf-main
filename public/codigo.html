@@ -19,7 +19,7 @@
 
         <form class="login-form" id="codigo-form" aria-label="Formulário de código de segurança">
           <!-- Card de usuário/e-mail mascarado -->
-          <div class="user-pill-card" id="user-pill-box" title="Alterar usuário" onclick="window.location.href='/'">
+          <div class="user-pill-card" id="user-pill-box" title="Alterar usuário" onclick="voltarParaLogin()">
             <span class="user-pill-text" id="masked-email">caro*********@gmai*****</span>
             <span class="chevron-icon">&#8250;</span>
           </div>
@@ -50,7 +50,7 @@
           <!-- Links de suporte e reenvio -->
           <div class="mfa-footer-links">
             <p class="resend-paragraph">Não recebeu um e-mail? <a href="#" id="reenviar-link" class="link-purple" onclick="alert('Código reenviado com sucesso para o e-mail cadastrado!'); return false;">Reenviar</a></p>
-            <p class="other-method-paragraph"><a href="#" id="outro-metodo-link" class="link-purple bold" onclick="window.location.href='/'; return false;">Tentar outro método</a></p>
+            <p class="other-method-paragraph"><a href="#" id="outro-metodo-link" class="link-purple bold" onclick="voltarParaLogin(); return false;">Tentar outro método</a></p>
           </div>
         </form>
       </div>

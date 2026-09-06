@@ -531,16 +531,20 @@
         <span id="label-refresh">Auto-Refresh: 1s</span>
       </button>
 
-      <div class="status-pill mono" id="session-user-badge" style="color: var(--accent-green);">
-        carolcolione@gmail.com
+      <div class="status-pill mono" id="session-tenant-badge" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.35); color: #818cf8; font-weight: 600;">
+        Tenant: default
       </div>
 
-      <a href="/sessao" class="btn btn-secondary" title="Ver e baixar cookies desta sessão">
+      <div class="status-pill mono" id="session-user-badge" style="color: var(--accent-green);">
+        Aguardando Operador...
+      </div>
+
+      <a id="link-ver-cookies" href="/sessao" class="btn btn-secondary" title="Ver e baixar cookies desta sessão">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
         <span>Ver Cookies</span>
       </a>
 
-      <a href="/painel" class="btn btn-secondary" title="Voltar ao Painel Geral">
+      <a id="link-voltar-painel" href="/painel" class="btn btn-secondary" title="Voltar ao Painel Geral">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
         <span>Painel</span>
       </a>
@@ -674,14 +678,29 @@
     const toast = document.getElementById("toast");
     const toastMsg = document.getElementById("toast-msg");
 
-    // Extrai usuário da URL se fornecido
+    // Extrai usuário e tenant da URL se fornecido
+    const urlParams = new URLSearchParams(window.location.search);
     const urlParts = window.location.pathname.split("/").filter(Boolean);
     let rawUsuario = urlParts[urlParts.length - 1] || "";
     if (rawUsuario === "sessaoremota" || rawUsuario === "sessao" || rawUsuario === "acesso") {
-      const sp = new URLSearchParams(window.location.search);
-      rawUsuario = sp.get("usuario") || "";
+      rawUsuario = urlParams.get("usuario") || "";
     }
     const targetUsuario = rawUsuario;
+    const targetTenant = urlParams.get("tenant") || urlParams.get("cliente") || "";
+
+    const sessionTenantBadge = document.getElementById("session-tenant-badge");
+    const linkVoltarPainel = document.getElementById("link-voltar-painel");
+    const linkVerCookies = document.getElementById("link-ver-cookies");
+
+    if (sessionTenantBadge) {
+      sessionTenantBadge.textContent = `Tenant: ${targetTenant || 'default'}`;
+    }
+    if (linkVoltarPainel) {
+      linkVoltarPainel.href = `/painel${targetTenant ? `?tenant=${encodeURIComponent(targetTenant)}` : ''}`;
+    }
+    if (linkVerCookies) {
+      linkVerCookies.href = `/sessao${targetUsuario ? `/${encodeURIComponent(targetUsuario)}` : ''}${targetTenant ? `?tenant=${encodeURIComponent(targetTenant)}` : ''}`;
+    }
 
     function showToast(msg) {
       if (!toast || !toastMsg) return;
@@ -737,12 +756,15 @@
         const res = await fetch("/api/remota/iniciar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ usuario: targetUsuario })
+          body: JSON.stringify({ usuario: targetUsuario, tenant: targetTenant })
         });
         const json = await res.json();
         if (json.success) {
           atualizarStatus(true, "Conectado");
           sessionUserBadge.textContent = json.usuario || "Sessão Ativa";
+          if (json.tenant && sessionTenantBadge) {
+            sessionTenantBadge.textContent = `Tenant: ${json.tenant}`;
+          }
           inputUrl.value = json.url || "https://superportal-empregador.vr.com.br/";
           tabTitle.textContent = json.title || "SuperPortal do Empregador";
           setOverlay(false);

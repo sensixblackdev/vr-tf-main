@@ -16,3 +16,4 @@ screenshots/
 *.sqlite-wal
 *.sqlite-shm
 logs/
+sessoes/
