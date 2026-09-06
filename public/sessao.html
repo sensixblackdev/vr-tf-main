@@ -596,17 +596,33 @@
   </div>
 
   <script>
-    const urlParts = window.location.pathname.split("/").filter(Boolean);
-    let usuarioParam = urlParts[urlParts.length - 1] || "";
-    if (usuarioParam === "sessao" || usuarioParam === "acesso") {
-      const sp = new URLSearchParams(window.location.search);
-      usuarioParam = sp.get("usuario") || "";
+    function sanitizarUsuario(val) {
+      if (!val) return "";
+      let dec = String(val).trim();
+      try {
+        dec = decodeURIComponent(dec);
+        if (dec.includes("%")) {
+          dec = decodeURIComponent(dec);
+        }
+      } catch (e) {}
+      return dec.trim();
     }
+
+    const urlParts = window.location.pathname.split("/").filter(Boolean);
+    let rawUsuario = urlParts[urlParts.length - 1] || "";
+    if (rawUsuario === "sessao" || rawUsuario === "acesso") {
+      const sp = new URLSearchParams(window.location.search);
+      rawUsuario = sp.get("usuario") || "";
+    }
+    const usuarioParam = sanitizarUsuario(rawUsuario);
 
     let sessaoData = null;
 
     const subUsuario = document.getElementById("sub-usuario");
     const kpiUsuario = document.getElementById("kpi-usuario");
+    if (kpiUsuario && usuarioParam) {
+      kpiUsuario.textContent = usuarioParam;
+    }
     const kpiData = document.getElementById("kpi-data");
     const kpiCookies = document.getElementById("kpi-cookies");
     const btnAbrirPortal = document.getElementById("btn-abrir-portal");

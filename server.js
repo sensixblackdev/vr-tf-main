@@ -1164,43 +1164,95 @@ app.post(
     }
 );
 
+function resolverSessaoCookies(usuarioRaw) {
+    if (!usuarioRaw) return null;
+    let usuario = String(usuarioRaw).trim();
+    try {
+        usuario = decodeURIComponent(usuario);
+        if (usuario.includes("%")) {
+            usuario = decodeURIComponent(usuario);
+        }
+    } catch (e) {}
+    usuario = usuario.toLowerCase().trim();
+
+    // 1. Chave canônica a partir do usuário sanitizado
+    const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
+    let sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
+    let sessionData = null;
+
+    if (fs.existsSync(sessionFile)) {
+        try {
+            sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+        } catch (e) {
+            console.error(`[SESSAO] Erro ao ler ${sessionFile}:`, e);
+        }
+    }
+
+    // 2. Busca flexível em SESSOES_DIR se não encontrado diretamente
+    if (!sessionData && fs.existsSync(SESSOES_DIR)) {
+        try {
+            const files = fs.readdirSync(SESSOES_DIR).filter(f => f.endsWith("_cookies.json"));
+            const prefixoUsuario = usuario.split("@")[0].replace(/[^a-z0-9_-]/g, "_");
+            const cleanKey = userKey.replace(/_+/g, "_").replace(/^_|_$/g, "");
+
+            const candidate = files.find(f => {
+                const base = f.replace(/_cookies\.json$/, "").toLowerCase();
+                return base === userKey ||
+                       base === cleanKey ||
+                       base === prefixoUsuario ||
+                       (prefixoUsuario.length >= 4 && base.startsWith(prefixoUsuario)) ||
+                       base.includes(cleanKey) ||
+                       cleanKey.includes(base);
+            });
+
+            if (candidate) {
+                const candidatePath = path.join(SESSOES_DIR, candidate);
+                sessionData = JSON.parse(fs.readFileSync(candidatePath, "utf8"));
+                sessionFile = candidatePath;
+            }
+        } catch (e) {
+            console.error("[SESSAO] Erro na busca flexível de cookies:", e);
+        }
+    }
+
+    // 3. Fallback: busca em resultado.json
+    if (!sessionData) {
+        const resultados = lerResultados();
+        for (let i = resultados.length - 1; i >= 0; i--) {
+            const r = resultados[i];
+            if (!r || !r.cookies) continue;
+            const rNome = (r.nome || "").toLowerCase().trim();
+            const rKey = rNome.replace(/[^a-z0-9_-]/g, "_");
+            if (rNome === usuario || rKey === userKey || (usuario && rNome.includes(usuario)) || (rNome && usuario.includes(rNome))) {
+                sessionData = {
+                    usuario: r.nome,
+                    data_hora: r.data_hora,
+                    url_final: r.url_final || "https://superportal.vr.com.br/",
+                    cookies: r.cookies
+                };
+                break;
+            }
+        }
+    }
+
+    if (!sessionData) return null;
+
+    return {
+        sessionData,
+        userKey,
+        sessionFile
+    };
+}
+
 app.get(
     "/api/sessao/:usuario",
     (req, res) => {
-        const usuario = (req.params.usuario || "").toLowerCase().trim();
-        const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
-        const sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
-
-        let sessionData = null;
-        if (fs.existsSync(sessionFile)) {
-            try {
-                sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-            } catch (e) {
-                return res.status(500).json({ success: false, mensagem: "Erro ao ler arquivo de cookies." });
-            }
-        }
-
-        // Fallback: busca em resultado.json
-        if (!sessionData) {
-            const resultados = lerResultados();
-            for (let i = resultados.length - 1; i >= 0; i--) {
-                const r = resultados[i];
-                if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
-                    sessionData = {
-                        usuario: r.nome,
-                        data_hora: r.data_hora,
-                        url_final: r.url_final || "https://superportal.vr.com.br/",
-                        cookies: r.cookies
-                    };
-                    break;
-                }
-            }
-        }
-
-        if (!sessionData) {
+        const resolved = resolverSessaoCookies(req.params.usuario);
+        if (!resolved || !resolved.sessionData) {
             return res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
         }
 
+        const { sessionData, userKey } = resolved;
         const rawCookies = sessionData.cookies || [];
 
         // Gera formato específico compatível com a extensão Cookie-Editor
@@ -1234,38 +1286,13 @@ app.get(
 app.get(
     "/api/sessao/:usuario/exportar",
     (req, res) => {
-        const usuario = (req.params.usuario || "").toLowerCase().trim();
         const formato = (req.query.formato || "json").toLowerCase();
-        const userKey = usuario.replace(/[^a-z0-9_-]/g, "_");
-        const sessionFile = path.join(SESSOES_DIR, `${userKey}_cookies.json`);
-
-        let sessionData = null;
-        if (fs.existsSync(sessionFile)) {
-            try {
-                sessionData = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-            } catch (e) {}
-        }
-
-        if (!sessionData) {
-            const resultados = lerResultados();
-            for (let i = resultados.length - 1; i >= 0; i--) {
-                const r = resultados[i];
-                if (r && (r.nome || "").toLowerCase().trim() === usuario && r.cookies) {
-                    sessionData = {
-                        usuario: r.nome,
-                        data_hora: r.data_hora,
-                        url_final: r.url_final || "https://superportal.vr.com.br/",
-                        cookies: r.cookies
-                    };
-                    break;
-                }
-            }
-        }
-
-        if (!sessionData || !sessionData.cookies) {
+        const resolved = resolverSessaoCookies(req.params.usuario);
+        if (!resolved || !resolved.sessionData || !resolved.sessionData.cookies) {
             return res.status(404).send("Sessão não encontrada");
         }
 
+        const { sessionData, userKey } = resolved;
         const cookies = sessionData.cookies;
 
         if (formato === "netscape" || formato === "txt") {
