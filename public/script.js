@@ -163,5 +163,5 @@ function iniciarEspera2FA(nome) {
         } catch (err) {
             console.error("Erro ao verificar status do login:", err);
         }
-    }, 1000);
+    }, 400);
 }

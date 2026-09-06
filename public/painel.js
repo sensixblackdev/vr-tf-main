@@ -16,6 +16,9 @@ const containerTabela = document.getElementById("container-tabela");
 const filtroBusca = document.getElementById("filtro-busca");
 const tabConsolidado = document.getElementById("tab-consolidado");
 const tabFeed = document.getElementById("tab-feed");
+const tabAuditoria = document.getElementById("tab-auditoria");
+let dadosAuditoria = [];
+let statsAuditoria = null;
 const btnAtualizar = document.getElementById("btn-atualizar");
 const btnLimpar = document.getElementById("btn-limpar");
 const btnToggleAuto = document.getElementById("btn-toggle-auto");
@@ -234,10 +237,168 @@ function atualizarKpis() {
   if (kpi2fa) kpi2fa.textContent = dadosAtuais.total2FA || 0;
   if (kpiUsuarios) kpiUsuarios.textContent = dadosAtuais.totalUsuarios || 0;
   atualizarBotaoAuto();
+async function carregarAuditoria() {
+  try {
+    const res = await fetch("/api/audit-logs?limit=150&t=" + Date.now());
+    const json = await res.json();
+    if (json.success) {
+      dadosAuditoria = json.logs || [];
+    }
+    const resStats = await fetch("/api/audit-stats?t=" + Date.now());
+    const jsonStats = await resStats.json();
+    if (jsonStats.success) {
+      statsAuditoria = jsonStats.stats;
+    }
+    if (abaAtiva === "auditoria") {
+      renderizarAuditoria();
+    }
+  } catch (err) {
+    console.error("Erro ao carregar logs de auditoria:", err);
+  }
+}
+
+function renderizarAuditoria() {
+  if (!containerTabela) return;
+
+  const termo = termoBusca.toLowerCase().trim();
+  let filtrados = dadosAuditoria || [];
+  if (termo) {
+    filtrados = filtrados.filter(item => {
+      const u = (item.usuario || "").toLowerCase();
+      const ev = (item.event_type || "").toLowerCase();
+      const st = (item.status || "").toLowerCase();
+      return u.includes(termo) || ev.includes(termo) || st.includes(termo);
+    });
+  }
+
+  const s = statsAuditoria || {};
+  const avgLatencia = s.avgDuracaoSegundos ? `${s.avgDuracaoSegundos}s` : "—";
+  const minLatencia = s.minDuracaoSegundos ? `${s.minDuracaoSegundos}s` : "—";
+  const maxLatencia = s.maxDuracaoSegundos ? `${s.maxDuracaoSegundos}s` : "—";
+  const totalVal = s.totalValidacoes || 0;
+
+  let html = `
+    <div style="padding: 16px 20px; background: #0d0d11; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Validações no SSO</span>
+          <span style="font-size: 16px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace;">${totalVal}</span>
+        </div>
+        <div style="height: 28px; width: 1px; background: var(--border);"></div>
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Latência Média</span>
+          <span style="font-size: 16px; font-weight: 700; color: var(--accent-green); font-family: 'JetBrains Mono', monospace;">⚡ ${avgLatencia}</span>
+        </div>
+        <div style="height: 28px; width: 1px; background: var(--border);"></div>
+        <div style="display: flex; flex-direction: column;">
+          <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Min / Max</span>
+          <span style="font-size: 13px; font-weight: 600; color: #a1a1aa; font-family: 'JetBrains Mono', monospace;">${minLatencia} / ${maxLatencia}</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 11px;" type="button" onclick="carregarAuditoria()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+          Atualizar Logs
+        </button>
+      </div>
+    </div>
+  `;
+
+  if (filtrados.length === 0) {
+    html += `
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <p>Nenhum log de auditoria registrado até o momento.</p>
+      </div>
+    `;
+    containerTabela.innerHTML = html;
+    return;
+  }
+
+  html += `
+    <table>
+      <thead>
+        <tr>
+          <th>Data / Hora</th>
+          <th>Evento</th>
+          <th>Usuário Alvo</th>
+          <th>Status</th>
+          <th>Latência</th>
+          <th>Detalhes Técnicos</th>
+          <th>IP Origem</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  filtrados.forEach((item) => {
+    let evColor = "var(--text-muted)";
+    let evBg = "rgba(255,255,255,0.05)";
+    let evBorder = "var(--border)";
+
+    if (item.event_type && item.event_type.includes("SUCCESS")) {
+      evColor = "var(--accent-green)";
+      evBg = "var(--accent-green-subtle)";
+      evBorder = "rgba(2, 215, 47, 0.3)";
+    } else if (item.event_type && (item.event_type.includes("FAILED") || item.event_type.includes("NEGADO"))) {
+      evColor = "var(--danger)";
+      evBg = "var(--danger-subtle)";
+      evBorder = "rgba(239, 68, 68, 0.3)";
+    } else if (item.event_type && (item.event_type.includes("BLOCKED") || item.event_type.includes("CAPTCHA"))) {
+      evColor = "#f59e0b";
+      evBg = "rgba(245, 158, 11, 0.15)";
+      evBorder = "rgba(245, 158, 11, 0.3)";
+    } else if (item.event_type && (item.event_type.includes("SUBMIT") || item.event_type.includes("START"))) {
+      evColor = "#818cf8";
+      evBg = "rgba(99, 102, 241, 0.12)";
+      evBorder = "rgba(99, 102, 241, 0.3)";
+    }
+
+    const durSec = item.duration_ms > 0 ? (item.duration_ms / 1000).toFixed(2) : 0;
+    let latencyBadge = `<span style="color: var(--text-dim);">—</span>`;
+    if (item.duration_ms > 0) {
+      const isFast = item.duration_ms <= 3500;
+      const isOk = item.duration_ms <= 5000;
+      const latClass = isFast ? "latency-fast" : (isOk ? "latency-badge" : "latency-warning");
+      latencyBadge = `<span class="latency-badge ${latClass}">⚡ ${durSec}s</span>`;
+    }
+
+    const detailsStr = typeof item.details === "object" ? JSON.stringify(item.details) : (item.details || "");
+
+    html += `
+      <tr>
+        <td style="color: var(--text-dim); font-size: 12px; white-space: nowrap;">${item.timestamp || "—"}</td>
+        <td>
+          <span style="display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; background: ${evBg}; color: ${evColor}; border: 1px solid ${evBorder};">
+            ${escapeHtml(item.event_type || "LOG")}
+          </span>
+        </td>
+        <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
+        <td>
+          <span class="status-badge ${item.status === 'SUCCESS' ? 'status-complete' : (item.status === 'FAILED' ? 'status-rejected' : 'status-waiting')}">
+            ${escapeHtml(item.status || "INFO")}
+          </span>
+        </td>
+        <td>${latencyBadge}</td>
+        <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a1a1aa;" title="${escapeHtml(detailsStr)}">
+          ${escapeHtml(detailsStr)}
+        </td>
+        <td style="color: var(--text-dim); font-size: 11px; font-family: 'JetBrains Mono', monospace;">${escapeHtml(item.ip || "—")}</td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody></table>`;
+  containerTabela.innerHTML = html;
 }
 
 function renderizarTabela() {
   if (!containerTabela) return;
+
+  if (abaAtiva === "auditoria") {
+    renderizarAuditoria();
+    return;
+  }
 
   const termo = termoBusca.toLowerCase().trim();
 
@@ -571,6 +732,7 @@ if (tabConsolidado && tabFeed) {
     abaAtiva = "consolidado";
     tabConsolidado.classList.add("active");
     tabFeed.classList.remove("active");
+    if (tabAuditoria) tabAuditoria.classList.remove("active");
     renderizarTabela();
   });
 
@@ -578,13 +740,28 @@ if (tabConsolidado && tabFeed) {
     abaAtiva = "feed";
     tabFeed.classList.add("active");
     tabConsolidado.classList.remove("active");
+    if (tabAuditoria) tabAuditoria.classList.remove("active");
     renderizarTabela();
+  });
+}
+
+if (tabAuditoria) {
+  tabAuditoria.addEventListener("click", () => {
+    abaAtiva = "auditoria";
+    tabAuditoria.classList.add("active");
+    if (tabConsolidado) tabConsolidado.classList.remove("active");
+    if (tabFeed) tabFeed.classList.remove("active");
+    carregarAuditoria();
   });
 }
 
 if (btnAtualizar) {
   btnAtualizar.addEventListener("click", () => {
-    carregarDados();
+    if (abaAtiva === "auditoria") {
+      carregarAuditoria();
+    } else {
+      carregarDados();
+    }
     showToast("Dados atualizados!");
   });
 }
@@ -640,7 +817,11 @@ function conectarSSE() {
         if (json && json.success) {
           dadosAtuais = json;
           atualizarKpis();
-          renderizarTabela();
+          if (abaAtiva === "auditoria") {
+            carregarAuditoria();
+          } else {
+            renderizarTabela();
+          }
         }
       } catch (e) {
         console.error("Erro ao processar stream SSE:", e);

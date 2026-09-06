@@ -12,3 +12,7 @@ venv/
 *.log
 VPS_INFO.md
 screenshots/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+logs/

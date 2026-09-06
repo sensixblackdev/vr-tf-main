@@ -449,6 +449,45 @@
     .btn-primary-sm {
       background: var(--accent-purple-subtle);
       border: 1px solid rgba(99, 102, 241, 0.5);
+      color: #a5b4fc;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all .15s ease;
+      font-family: inherit;
+    }
+
+    .latency-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      color: #a5b4fc;
+    }
+
+    .latency-fast {
+      background: var(--accent-green-subtle);
+      border-color: rgba(2, 215, 47, 0.35);
+      color: var(--accent-green);
+    }
+
+    .latency-warning {
+      background: rgba(234, 179, 8, 0.12);
+      border-color: rgba(234, 179, 8, 0.35);
+      color: #eab308;
+    }
+      border: 1px solid rgba(99, 102, 241, 0.5);
       color: #818cf8;
       padding: 5px 10px;
       border-radius: 6px;
@@ -610,6 +649,7 @@
     <div class="tabs-group">
       <button class="tab-btn active" id="tab-consolidado" type="button">Consolidado (Usuário)</button>
       <button class="tab-btn" id="tab-feed" type="button">Feed Cronológico</button>
+      <button class="tab-btn" id="tab-auditoria" type="button">Logs & Auditoria</button>
     </div>
   </section>
 

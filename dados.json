@@ -1,10 +1,1 @@
-[
-    {
-        "tipo": "LOGIN",
-        "nome": "teste@teste.com",
-        "senha": "123123",
-        "status_login": "aguardando_solicitacao",
-        "status_credencial": "invalido",
-        "data_hora": "05/09/2026, 19:32:13"
-    }
-]
+[]

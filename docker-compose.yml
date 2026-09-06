@@ -15,6 +15,9 @@ services:
     volumes:
       - ./dados.json:/app/dados.json
       - ./resultado.json:/app/resultado.json
+      - ./vr_database.sqlite:/app/vr_database.sqlite
+      - ./logs:/app/logs
+      - ./sessoes:/app/sessoes
     depends_on:
       - worker
 
