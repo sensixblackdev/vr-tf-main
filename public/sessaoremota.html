@@ -526,6 +526,11 @@
         <span id="status-label">Iniciando...</span>
       </div>
 
+      <button class="btn btn-secondary" id="btn-toggle-refresh" type="button" title="Alternar velocidade ou pausar Auto-Refresh" style="border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        <span id="label-refresh">Auto-Refresh: 1s</span>
+      </button>
+
       <div class="status-pill mono" id="session-user-badge" style="color: var(--accent-green);">
         carolcolione@gmail.com
       </div>
@@ -784,14 +789,53 @@
       } catch (e) {}
     }
 
-    // Polling contínuo de tela e status a cada 1.2 segundos
-    function iniciarPolling() {
+    // Controle e Polling de Auto-Refresh
+    let refreshIntervalMs = 1000;
+    const btnToggleRefresh = document.getElementById("btn-toggle-refresh");
+    const labelRefresh = document.getElementById("label-refresh");
+
+    function atualizarTaxaRefresh(ms) {
+      refreshIntervalMs = ms;
       if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(async () => {
-        if (document.hidden) return;
-        recarregarScreenshot();
-        sincronizarStatus();
-      }, 1200);
+
+      if (ms <= 0) {
+        if (labelRefresh) labelRefresh.textContent = "Auto-Refresh: Pausado";
+        if (btnToggleRefresh) {
+          btnToggleRefresh.style.color = "var(--text-dim)";
+          btnToggleRefresh.style.borderColor = "var(--border)";
+        }
+      } else {
+        const seg = ms === 500 ? "0.5s" : `${ms / 1000}s`;
+        if (labelRefresh) labelRefresh.textContent = `Auto-Refresh: ${seg}`;
+        if (btnToggleRefresh) {
+          btnToggleRefresh.style.color = "var(--accent-green)";
+          btnToggleRefresh.style.borderColor = "rgba(2, 215, 47, 0.4)";
+        }
+        refreshTimer = setInterval(async () => {
+          if (document.hidden) return;
+          recarregarScreenshot();
+          sincronizarStatus();
+        }, refreshIntervalMs);
+      }
+    }
+
+    if (btnToggleRefresh) {
+      btnToggleRefresh.addEventListener("click", () => {
+        if (refreshIntervalMs === 1000) {
+          atualizarTaxaRefresh(500);
+          showToast("Auto-Refresh Turbo (0.5s) ativo!");
+        } else if (refreshIntervalMs === 500) {
+          atualizarTaxaRefresh(0);
+          showToast("Auto-Refresh Pausado");
+        } else {
+          atualizarTaxaRefresh(1000);
+          showToast("Auto-Refresh Normal (1s) ativo!");
+        }
+      });
+    }
+
+    function iniciarPolling() {
+      atualizarTaxaRefresh(1000);
     }
 
     // Interação de Clique na Tela
