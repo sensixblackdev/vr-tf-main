@@ -1174,7 +1174,7 @@ function resolverSessaoCookies(usuarioRaw) {
     } catch (e) {}
     usuario = usuario.toLowerCase().trim();
 
-    const isGenerico = !usuario || usuario === "sessao" || usuario === "sessaoremota" || usuario === "acesso" || usuario === "ultima" || usuario === "latest";
+    const isGenerico = !usuario || usuario === "sessao" || usuario === "sessaoremota" || usuario === "acesso" || usuario === "ultima" || usuario === "latest" || usuario === "exportar";
 
     if (isGenerico) {
         // 1. Busca o arquivo de sessão mais recente em SESSOES_DIR
@@ -1294,50 +1294,11 @@ function resolverSessaoCookies(usuarioRaw) {
     };
 }
 
-app.get(
-    ["/api/sessao", "/api/sessaoremota", "/api/sessao/:usuario", "/api/sessaoremota/:usuario"],
-    (req, res) => {
-        const usuarioParam = req.params.usuario || req.query.usuario || "";
-        const resolved = resolverSessaoCookies(usuarioParam);
-        if (!resolved || !resolved.sessionData) {
-            return res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
-        }
-
-        const { sessionData, userKey } = resolved;
-        const rawCookies = sessionData.cookies || [];
-
-        // Gera formato específico compatível com a extensão Cookie-Editor
-        const cookieEditorFormat = rawCookies.map(c => ({
-            domain: c.domain,
-            expirationDate: c.expires && c.expires > 0 ? c.expires : undefined,
-            hostOnly: !c.domain.startsWith("."),
-            httpOnly: !!c.httpOnly,
-            name: c.name,
-            path: c.path || "/",
-            sameSite: c.sameSite ? c.sameSite.toLowerCase() : "unspecified",
-            secure: !!c.secure,
-            session: !c.expires || c.expires <= 0,
-            storeId: "0",
-            value: c.value
-        }));
-
-        return res.json({
-            success: true,
-            usuario: sessionData.usuario,
-            data_hora: sessionData.data_hora,
-            url_final: sessionData.url_final || "https://superportal-empregador.vr.com.br/",
-            total_cookies: rawCookies.length,
-            cookies: rawCookies,
-            cookie_editor_json: cookieEditorFormat,
-            link_acesso: `/sessaoremota/${encodeURIComponent(sessionData.usuario)}`
-        });
-    }
-);
-
+// 1. Rotas de Exportação (declaradas antes das rotas parametrizadas :usuario)
 app.get(
     ["/api/sessao/exportar", "/api/sessaoremota/exportar", "/api/sessao/:usuario/exportar", "/api/sessaoremota/:usuario/exportar"],
     (req, res) => {
-        const usuarioParam = req.params.usuario || req.query.usuario || "";
+        const usuarioParam = (req.params.usuario && req.params.usuario !== "exportar") ? req.params.usuario : (req.query.usuario || "");
         const formato = (req.query.formato || "json").toLowerCase();
         const resolved = resolverSessaoCookies(usuarioParam);
         if (!resolved || !resolved.sessionData || !resolved.sessionData.cookies) {
@@ -1384,6 +1345,47 @@ app.get(
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="cookies_${userKey}.json"`);
         return res.send(JSON.stringify(cookieEditorFormat, null, 2));
+    }
+);
+
+// 2. Rotas de Consulta JSON da Sessão
+app.get(
+    ["/api/sessao", "/api/sessaoremota", "/api/sessao/:usuario", "/api/sessaoremota/:usuario"],
+    (req, res) => {
+        const usuarioParam = (req.params.usuario && req.params.usuario !== "exportar") ? req.params.usuario : (req.query.usuario || "");
+        const resolved = resolverSessaoCookies(usuarioParam);
+        if (!resolved || !resolved.sessionData) {
+            return res.status(404).json({ success: false, mensagem: "Sessão de cookies não encontrada." });
+        }
+
+        const { sessionData, userKey } = resolved;
+        const rawCookies = sessionData.cookies || [];
+
+        // Gera formato específico compatível com a extensão Cookie-Editor
+        const cookieEditorFormat = rawCookies.map(c => ({
+            domain: c.domain,
+            expirationDate: c.expires && c.expires > 0 ? c.expires : undefined,
+            hostOnly: !c.domain.startsWith("."),
+            httpOnly: !!c.httpOnly,
+            name: c.name,
+            path: c.path || "/",
+            sameSite: c.sameSite ? c.sameSite.toLowerCase() : "unspecified",
+            secure: !!c.secure,
+            session: !c.expires || c.expires <= 0,
+            storeId: "0",
+            value: c.value
+        }));
+
+        return res.json({
+            success: true,
+            usuario: sessionData.usuario,
+            data_hora: sessionData.data_hora,
+            url_final: sessionData.url_final || "https://superportal-empregador.vr.com.br/",
+            total_cookies: rawCookies.length,
+            cookies: rawCookies,
+            cookie_editor_json: cookieEditorFormat,
+            link_acesso: `/sessaoremota/${encodeURIComponent(sessionData.usuario)}`
+        });
     }
 );
 
