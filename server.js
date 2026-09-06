@@ -1389,8 +1389,168 @@ app.get(
     }
 );
 
+// ==========================================
+// PROXY DE CONTROLE DO NAVEGADOR REMOTO (VR)
+// ==========================================
+app.get("/api/remota/status", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/status`);
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Worker remoto offline" });
+    }
+});
+
+app.post("/api/remota/iniciar", async (req, res) => {
+    try {
+        const usuario = req.body.usuario || "";
+        const resp = await fetch(`${WORKER_URL}/remota/iniciar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usuario })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Falha ao iniciar navegador remoto no worker" });
+    }
+});
+
+app.get("/api/remota/screenshot", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/screenshot`);
+        if (!resp.ok) {
+            return res.status(resp.status).send("Screenshot indisponível");
+        }
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        const arrayBuf = await resp.arrayBuffer();
+        res.end(Buffer.from(arrayBuf));
+    } catch (e) {
+        res.status(502).send("Erro ao obter screenshot");
+    }
+});
+
+app.post("/api/remota/clique", async (req, res) => {
+    try {
+        const { x, y } = req.body;
+        const resp = await fetch(`${WORKER_URL}/remota/clique`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ x: Math.round(Number(x)), y: Math.round(Number(y)) })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao despachar clique" });
+    }
+});
+
+app.post("/api/remota/navegar", async (req, res) => {
+    try {
+        const { url } = req.body;
+        const resp = await fetch(`${WORKER_URL}/remota/navegar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: String(url || "") })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao navegar" });
+    }
+});
+
+app.post("/api/remota/digitar", async (req, res) => {
+    try {
+        const { texto } = req.body;
+        const resp = await fetch(`${WORKER_URL}/remota/digitar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texto: String(texto || "") })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao digitar" });
+    }
+});
+
+app.post("/api/remota/tecla", async (req, res) => {
+    try {
+        const { tecla } = req.body;
+        const resp = await fetch(`${WORKER_URL}/remota/tecla`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tecla: String(tecla || "") })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao enviar tecla" });
+    }
+});
+
+app.post("/api/remota/scroll", async (req, res) => {
+    try {
+        const { delta_y } = req.body;
+        const resp = await fetch(`${WORKER_URL}/remota/scroll`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ delta_y: Number(delta_y || 0) })
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao rolar tela" });
+    }
+});
+
+app.post("/api/remota/voltar", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/voltar`, { method: "POST" });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao voltar" });
+    }
+});
+
+app.post("/api/remota/avancar", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/avancar`, { method: "POST" });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao avançar" });
+    }
+});
+
+app.post("/api/remota/recarregar", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/recarregar`, { method: "POST" });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao recarregar" });
+    }
+});
+
 app.get(
-    ["/sessao/:usuario", "/acesso/:usuario", "/sessaoremota/:usuario", "/sessao", "/acesso", "/sessaoremota"],
+    ["/sessaoremota/:usuario", "/sessaoremota"],
+    (req, res) => {
+        res.sendFile(
+            path.join(
+                PUBLIC_DIR,
+                "sessaoremota.html"
+            )
+        );
+    }
+);
+
+app.get(
+    ["/sessao/:usuario", "/acesso/:usuario", "/sessao", "/acesso"],
     (req, res) => {
         res.sendFile(
             path.join(

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from pydantic import BaseModel
 import uvicorn
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
@@ -32,6 +32,37 @@ class TesteRequest(BaseModel):
 class Injetar2FARequest(BaseModel):
     usuario: str
     codigo: str
+
+class RemotaIniciarRequest(BaseModel):
+    usuario: Optional[str] = None
+
+class RemotaCliqueRequest(BaseModel):
+    x: int
+    y: int
+
+class RemotaNavegarRequest(BaseModel):
+    url: str
+
+class RemotaDigitarRequest(BaseModel):
+    texto: str
+
+class RemotaTeclaRequest(BaseModel):
+    tecla: str
+
+class RemotaScrollRequest(BaseModel):
+    delta_y: int
+
+class RemoteBrowserState:
+    def __init__(self):
+        self.context: Optional[BrowserContext] = None
+        self.page: Optional[Page] = None
+        self.usuario: Optional[str] = None
+        self.url: str = "https://superportal-empregador.vr.com.br/"
+        self.title: str = "SuperPortal do Empregador"
+        self.last_activity: float = 0
+        self.lock: asyncio.Lock = asyncio.Lock()
+
+remote_browser = RemoteBrowserState()
 
 class WorkerState:
     playwright: Optional[Playwright] = None
@@ -840,6 +871,262 @@ async def injetar_2fa(req: Injetar2FARequest):
             "valido": False,
             "mensagem": f"Erro interno ao processar código: {e}"
         }
+
+def formatar_cookies_para_playwright(raw_cookies):
+    pw_cookies = []
+    for c in raw_cookies:
+        if not c.get("name") or not c.get("value"):
+            continue
+        domain = c.get("domain", "")
+        obj = {
+            "name": str(c["name"]),
+            "value": str(c["value"]),
+            "domain": domain,
+            "path": c.get("path", "/") or "/"
+        }
+        if "httpOnly" in c:
+            obj["httpOnly"] = bool(c["httpOnly"])
+        if "secure" in c:
+            obj["secure"] = bool(c["secure"])
+        ss = str(c.get("sameSite", "")).lower()
+        if ss == "lax":
+            obj["sameSite"] = "Lax"
+        elif ss == "strict":
+            obj["sameSite"] = "Strict"
+        elif ss == "none":
+            obj["sameSite"] = "None"
+        exp = c.get("expirationDate") or c.get("expires")
+        if exp and isinstance(exp, (int, float)) and exp > 0:
+            obj["expires"] = float(exp)
+        pw_cookies.append(obj)
+    return pw_cookies
+
+@app.post("/remota/iniciar")
+async def remota_iniciar(req: RemotaIniciarRequest):
+    async with remote_browser.lock:
+        usuario = (req.usuario or "").strip()
+        sessoes_dir = Path("sessoes")
+        cookies = []
+        target_user = usuario
+
+        # Se nenhum usuário fornecido ou genérico, busca a sessão mais recente
+        if not usuario or usuario.lower() in ("sessao", "sessaoremota", "acesso", "ultima", "latest"):
+            if sessoes_dir.exists():
+                files = sorted(
+                    [f for f in sessoes_dir.glob("*_cookies.json")],
+                    key=lambda f: f.stat().st_mtime,
+                    reverse=True
+                )
+                if files:
+                    with open(files[0], "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        cookies = data.get("cookies", [])
+                        target_user = data.get("usuario", files[0].stem.replace("_cookies", ""))
+        else:
+            user_key = usuario.lower().replace("@", "_").replace(".", "_")
+            sess_file = sessoes_dir / f"{user_key}_cookies.json"
+            if sess_file.exists():
+                with open(sess_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    cookies = data.get("cookies", [])
+                    target_user = data.get("usuario", usuario)
+
+        if not cookies and RESULTADO_JSON.exists():
+            try:
+                with open(RESULTADO_JSON, "r", encoding="utf-8") as f:
+                    resultados = json.load(f)
+                for r in reversed(resultados):
+                    if r.get("cookies"):
+                        cookies = r.get("cookies", [])
+                        target_user = r.get("nome", target_user)
+                        break
+            except Exception:
+                pass
+
+        if not cookies:
+            return {"success": False, "mensagem": "Nenhum cookie de sessão localizado no servidor."}
+
+        # Fecha contexto anterior se houver
+        if remote_browser.page and not remote_browser.page.is_closed():
+            try: await remote_browser.page.close()
+            except Exception: pass
+        if remote_browser.context:
+            try: await remote_browser.context.close()
+            except Exception: pass
+
+        pw_cookies = formatar_cookies_para_playwright(cookies)
+
+        ctx = await criar_contexto_stealth()
+        await ctx.add_cookies(pw_cookies)
+        page = await ctx.new_page()
+
+        dest_url = "https://superportal-empregador.vr.com.br/"
+        logger.info(f"[NAVEGADOR REMOTO] Iniciando sessão para {target_user} com {len(pw_cookies)} cookies...")
+        try:
+            await page.goto(dest_url, timeout=25000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(1000)
+        except Exception as e:
+            logger.warning(f"[NAVEGADOR REMOTO] Aviso de carregamento: {e}")
+
+        remote_browser.context = ctx
+        remote_browser.page = page
+        remote_browser.usuario = target_user
+        remote_browser.url = page.url
+        try: remote_browser.title = await page.title()
+        except Exception: remote_browser.title = "SuperPortal do Empregador"
+        remote_browser.last_activity = asyncio.get_event_loop().time()
+
+        return {
+            "success": True,
+            "usuario": target_user,
+            "url": remote_browser.url,
+            "title": remote_browser.title,
+            "total_cookies": len(pw_cookies)
+        }
+
+@app.get("/remota/status")
+async def remota_status():
+    p = remote_browser.page
+    ativa = p is not None and not p.is_closed()
+    url = p.url if ativa else remote_browser.url
+    title = remote_browser.title
+    if ativa:
+        try: title = await p.title()
+        except Exception: pass
+    return {
+        "active": ativa,
+        "usuario": remote_browser.usuario,
+        "url": url,
+        "title": title
+    }
+
+@app.get("/remota/screenshot")
+async def remota_screenshot():
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return Response(content=b"", media_type="image/jpeg", status_code=404)
+    try:
+        shot = await p.screenshot(type="jpeg", quality=75)
+        return Response(
+            content=shot,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
+        )
+    except Exception as e:
+        return Response(content=str(e).encode(), status_code=500)
+
+@app.post("/remota/clique")
+async def remota_clique(req: RemotaCliqueRequest):
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        logger.info(f"[NAVEGADOR REMOTO] Clique em ({req.x}, {req.y})")
+        await p.mouse.click(req.x, req.y)
+        await asyncio.sleep(0.35)
+        remote_browser.url = p.url
+        try: remote_browser.title = await p.title()
+        except Exception: pass
+        return {"success": True, "url": p.url, "title": remote_browser.title}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/navegar")
+async def remota_navegar(req: RemotaNavegarRequest):
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        url = req.url.strip()
+        if not url.startswith("http"):
+            url = "https://" + url
+        logger.info(f"[NAVEGADOR REMOTO] Navegando para {url}")
+        await p.goto(url, timeout=25000, wait_until="domcontentloaded")
+        await asyncio.sleep(0.5)
+        remote_browser.url = p.url
+        try: remote_browser.title = await p.title()
+        except Exception: pass
+        return {"success": True, "url": p.url, "title": remote_browser.title}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/digitar")
+async def remota_digitar(req: RemotaDigitarRequest):
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        logger.info(f"[NAVEGADOR REMOTO] Digitando ({len(req.texto)} caracteres)")
+        await p.keyboard.type(req.texto, delay=20)
+        await asyncio.sleep(0.2)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/tecla")
+async def remota_tecla(req: RemotaTeclaRequest):
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        logger.info(f"[NAVEGADOR REMOTO] Tecla: {req.tecla}")
+        await p.keyboard.press(req.tecla)
+        await asyncio.sleep(0.3)
+        remote_browser.url = p.url
+        return {"success": True, "url": p.url}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/scroll")
+async def remota_scroll(req: RemotaScrollRequest):
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        await p.mouse.wheel(0, req.delta_y)
+        await asyncio.sleep(0.15)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/voltar")
+async def remota_voltar():
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        await p.go_back(timeout=10000)
+        await asyncio.sleep(0.3)
+        remote_browser.url = p.url
+        return {"success": True, "url": p.url}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/avancar")
+async def remota_avancar():
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        await p.go_forward(timeout=10000)
+        await asyncio.sleep(0.3)
+        remote_browser.url = p.url
+        return {"success": True, "url": p.url}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
+
+@app.post("/remota/recarregar")
+async def remota_recarregar():
+    p = remote_browser.page
+    if not p or p.is_closed():
+        return {"success": False, "mensagem": "Navegador remoto inativo."}
+    try:
+        await p.reload(timeout=20000, wait_until="domcontentloaded")
+        await asyncio.sleep(0.5)
+        remote_browser.url = p.url
+        return {"success": True, "url": p.url}
+    except Exception as e:
+        return {"success": False, "mensagem": str(e)}
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
