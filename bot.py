@@ -246,7 +246,24 @@ def testar_login(usuario, senha):
             pass_input.type(senha, delay=30)
 
 
-            print("[5] Clicando em continuar...")
+            print("[5] Verificando se há desafio de segurança e clicando em continuar...")
+
+            try:
+                cf_input = pagina.locator('input[name="cf-turnstile-response"]').first
+                if cf_input.count() > 0:
+                    val = cf_input.get_attribute("value")
+                    if not val:
+                        print("[*] Aguardando token Turnstile ser gerado em segundo plano...")
+                        for _ in range(12):
+                            pagina.wait_for_timeout(150)
+                            val = cf_input.get_attribute("value")
+                            if val:
+                                print("[*] Token Turnstile obtido com sucesso!")
+                                break
+                else:
+                    pagina.wait_for_timeout(400)
+            except Exception:
+                pagina.wait_for_timeout(400)
 
             btn = pagina.locator(SELECTOR_CONTINUAR).first
             if btn.count() > 0:
@@ -281,10 +298,25 @@ def testar_login(usuario, senha):
                             el = erro_locator.nth(i)
                             if el.is_visible():
                                 txt = el.inner_text().strip()
-                                if txt:
+                                err_code = (el.get_attribute("data-error-code") or "").strip()
+                                full_err = f"{txt} {err_code}".lower()
+
+                                # Erro 600010: falha de carregamento do desafio Turnstile
+                                if "600010" in full_err or "desafio de segurança" in full_err or "turnstile" in full_err or "captcha" in full_err:
+                                    resultado_valido = False
+                                    status_credencial = "bloqueio_captcha"
+                                    msg_resultado = f"Desafio de segurança da VR pendente (Código: {txt or err_code})"
+                                    turnstile_detectado = True
+                                    break
+                                elif any(k in full_err for k in ["incorret", "inválid", "invalido", "senha", "não encontramos", "verifique seus dados", "credenciais", "password"]):
                                     resultado_valido = False
                                     status_credencial = "invalido"
                                     msg_resultado = f"Credenciais incorretas na VR: {txt}"
+                                    break
+                                elif txt:
+                                    resultado_valido = False
+                                    status_credencial = "invalido"
+                                    msg_resultado = f"Erro reportado pela VR: {txt}"
                                     break
                     if resultado_valido is False:
                         break

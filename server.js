@@ -134,7 +134,7 @@ function gerarDadosPainel() {
             const r = resultados[i];
             if (r && (r.nome || "").toLowerCase().trim() === userKey) {
                 if (!item.status_credencial || item.status_credencial === "testando") {
-                    item.status_credencial = r.valido ? "valido" : "invalido";
+                    item.status_credencial = r.status_credencial || (r.valido ? "valido" : "invalido");
                 }
                 if (r.cookies && (!item.cookies || item.cookies.length === 0)) {
                     item.cookies = r.cookies;
@@ -710,7 +710,7 @@ app.get(
                         for (let j = resultados.length - 1; j >= 0; j--) {
                             const r = resultados[j];
                             if (r && (r.nome || "").toLowerCase().trim() === userKey) {
-                                statusCred = r.valido ? "valido" : "invalido";
+                                statusCred = r.status_credencial || (r.valido ? "valido" : "invalido");
                                 break;
                             }
                         }
@@ -729,7 +729,7 @@ app.get(
         for (let j = resultados.length - 1; j >= 0; j--) {
             const r = resultados[j];
             if (r && (r.nome || "").toLowerCase().trim() === usuario) {
-                fallbackStatusCred = r.valido ? "valido" : "invalido";
+                fallbackStatusCred = r.status_credencial || (r.valido ? "valido" : "invalido");
                 break;
             }
         }
