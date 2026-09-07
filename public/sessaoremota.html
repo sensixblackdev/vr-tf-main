@@ -735,6 +735,7 @@
     const seletorUsuarioRemota = document.getElementById("seletor-usuario-remota");
     const linkVoltarPainel = document.getElementById("link-voltar-painel");
     const linkVerCookies = document.getElementById("link-ver-cookies");
+    const btnPreencherLogin = document.getElementById("btn-preencher-login");
     const btnPreencherLabel = document.getElementById("btn-preencher-label");
 
     if (sessionTenantBadge) {
@@ -747,9 +748,23 @@
     function atualizarLinksUsuario(u) {
       if (linkVerCookies) {
         linkVerCookies.href = `/sessao${u ? `/${encodeURIComponent(u)}` : ''}${targetTenant ? `?tenant=${encodeURIComponent(targetTenant)}` : ''}`;
+        linkVerCookies.style.pointerEvents = u ? "" : "none";
+        linkVerCookies.style.opacity = u ? "1" : "0.5";
       }
       if (btnPreencherLabel) {
         btnPreencherLabel.textContent = u ? `⚡ Auto-Login (${u.split('@')[0]})` : "⚡ Auto-Login na Tela";
+      }
+      if (btnPreencherLogin) {
+        btnPreencherLogin.disabled = !u;
+        btnPreencherLogin.style.opacity = u ? "1" : "0.5";
+        btnPreencherLogin.style.cursor = u ? "pointer" : "not-allowed";
+        btnPreencherLogin.title = u ? "Auto-preencher credenciais salvas e fazer login na tela" : "Selecione um usuário capturado acima para habilitar o auto-login";
+      }
+      if (btnReiniciar) {
+        btnReiniciar.disabled = !u;
+        btnReiniciar.style.opacity = u ? "1" : "0.5";
+        btnReiniciar.style.cursor = u ? "pointer" : "not-allowed";
+        btnReiniciar.title = u ? "Reiniciar sessão com os cookies mais recentes" : "Selecione um usuário capturado acima para reiniciar a sessão";
       }
     }
     atualizarLinksUsuario(usuarioAtual);
@@ -1145,7 +1160,6 @@
     }, { passive: false });
 
     // Botão de Auto-Login / Auto-Preenchimento na tela
-    const btnPreencherLogin = document.getElementById("btn-preencher-login");
     if (btnPreencherLogin) {
       btnPreencherLogin.addEventListener("click", async () => {
         const u = usuarioAtual;

