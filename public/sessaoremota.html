@@ -655,9 +655,9 @@
 
         <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
           <span id="session-alert-badge" style="display: none; font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b; font-weight: 600;">Sessão expirada na VR — Faça login na tela</span>
-          <button class="quick-link-btn" id="btn-preencher-login" type="button" style="border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green);" title="Digitar e-mail no campo ativo">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span id="btn-preencher-label">Preencher E-mail</span>
+          <button class="quick-link-btn" id="btn-preencher-login" type="button" style="border-color: rgba(2, 215, 47, 0.6); color: var(--accent-green); background: rgba(2, 215, 47, 0.08); font-weight: 700;" title="Auto-preencher credenciais salvas e fazer login na tela">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            <span id="btn-preencher-label">⚡ Auto-Login na Tela</span>
           </button>
         </div>
       </div>
@@ -749,7 +749,7 @@
         linkVerCookies.href = `/sessao${u ? `/${encodeURIComponent(u)}` : ''}${targetTenant ? `?tenant=${encodeURIComponent(targetTenant)}` : ''}`;
       }
       if (btnPreencherLabel) {
-        btnPreencherLabel.textContent = u ? `Preencher (${u})` : "Preencher Login";
+        btnPreencherLabel.textContent = u ? `⚡ Auto-Login (${u.split('@')[0]})` : "⚡ Auto-Login na Tela";
       }
     }
     atualizarLinksUsuario(usuarioAtual);
@@ -1144,7 +1144,7 @@
       }, 50);
     }, { passive: false });
 
-    // Botão de Preenchimento Rápido do Usuário no campo focado
+    // Botão de Auto-Login / Auto-Preenchimento na tela
     const btnPreencherLogin = document.getElementById("btn-preencher-login");
     if (btnPreencherLogin) {
       btnPreencherLogin.addEventListener("click", async () => {
@@ -1153,16 +1153,28 @@
           showToast("Selecione um usuário capturado no seletor acima.");
           return;
         }
+        showToast(`Auto-preenchendo credenciais de ${u}...`);
+        btnPreencherLogin.disabled = true;
         try {
-          await fetch("/api/remota/digitar", {
+          const res = await fetch("/api/remota/auto-login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ texto: u })
+            body: JSON.stringify({ usuario: u })
           });
-          showToast(`E-mail ${u} enviado ao campo!`);
-          setTimeout(recarregarScreenshot, 300);
+          const json = await res.json();
+          if (json.success) {
+            showToast(json.mensagem || "Credenciais preenchidas e submetidas!");
+          } else {
+            showToast(json.mensagem || "Erro ao auto-preencher.");
+          }
+          setTimeout(recarregarScreenshot, 600);
+          setTimeout(recarregarScreenshot, 2000);
+          setTimeout(sincronizarStatus, 2500);
         } catch (e) {
           console.error(e);
+          showToast("Erro na requisição de auto-login.");
+        } finally {
+          btnPreencherLogin.disabled = false;
         }
       });
     }

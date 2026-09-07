@@ -1498,6 +1498,20 @@ app.post("/api/remota/iniciar", async (req, res) => {
     }
 });
 
+app.post("/api/remota/auto-login", async (req, res) => {
+    try {
+        const resp = await fetch(`${WORKER_URL}/remota/auto-login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(req.body)
+        });
+        const json = await resp.json();
+        res.json(json);
+    } catch (e) {
+        res.status(502).json({ success: false, mensagem: "Erro ao comunicar com worker remoto" });
+    }
+});
+
 app.get("/api/remota/screenshot", async (req, res) => {
     try {
         const resp = await fetch(`${WORKER_URL}/remota/screenshot`);

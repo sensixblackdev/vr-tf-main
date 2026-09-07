@@ -37,6 +37,9 @@ class Injetar2FARequest(BaseModel):
 class RemotaIniciarRequest(BaseModel):
     usuario: Optional[str] = None
 
+class RemotaAutoLoginRequest(BaseModel):
+    usuario: Optional[str] = None
+
 class RemotaCliqueRequest(BaseModel):
     x: int
     y: int
@@ -1135,6 +1138,11 @@ async def remota_iniciar(req: RemotaIniciarRequest):
         except Exception as e:
             logger.warning(f"[NAVEGADOR REMOTO] Aviso de carregamento: {e}")
 
+        # Se após navegar para o SuperPortal fomos redirecionados para a tela de login (sessão expirada)
+        if "login" in page.url.lower() or "sso-acesso" in page.url.lower():
+            logger.info(f"[NAVEGADOR REMOTO] Sessão expirada na VR detectada ({page.url}). Tentando auto-login para {target_user}...")
+            await auto_preencher_e_logar(page, target_user)
+
         remote_browser.context = ctx
         remote_browser.page = page
         remote_browser.usuario = target_user
@@ -1149,6 +1157,92 @@ async def remota_iniciar(req: RemotaIniciarRequest):
             "url": remote_browser.url,
             "title": remote_browser.title,
             "total_cookies": len(cookies) if cookies else 22
+        }
+
+def obter_senha_usuario(usuario: str) -> Optional[str]:
+    u_clean = usuario.strip().lower()
+    db_file = Path("vr_database.sqlite")
+    if db_file.exists():
+        try:
+            import sqlite3
+            con = sqlite3.connect(db_file)
+            cur = con.cursor()
+            row = cur.execute(
+                "SELECT senha FROM logins WHERE lower(usuario) = ? AND senha != '' ORDER BY id DESC LIMIT 1",
+                (u_clean,)
+            ).fetchone()
+            con.close()
+            if row and row[0]:
+                return row[0]
+        except Exception:
+            pass
+    for path in (DADOS_JSON, RESULTADO_JSON):
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    itens = json.load(f)
+                for item in reversed(itens):
+                    u = (item.get("usuario") or item.get("nome") or "").lower().strip()
+                    s = item.get("senha")
+                    if u == u_clean and s:
+                        return s
+            except Exception:
+                pass
+    return None
+
+async def auto_preencher_e_logar(page: Page, usuario: str) -> bool:
+    senha = obter_senha_usuario(usuario)
+    if not senha:
+        logger.warning(f"[AUTO-LOGIN] Nenhuma senha salva encontrada para {usuario}")
+        return False
+
+    try:
+        username_el = page.locator(SELECTOR_USERNAME).first
+        if await username_el.count() > 0 and await username_el.is_visible():
+            await username_el.click()
+            await username_el.fill(usuario)
+            await asyncio.sleep(0.2)
+
+        password_el = page.locator(SELECTOR_PASSWORD).first
+        if await password_el.count() > 0 and await password_el.is_visible():
+            await password_el.click()
+            await password_el.fill(senha)
+            await asyncio.sleep(0.2)
+
+        btn_continuar = page.locator(SELECTOR_CONTINUAR).first
+        if await btn_continuar.count() > 0 and await btn_continuar.is_visible():
+            await btn_continuar.click()
+            logger.info(f"[AUTO-LOGIN] Credenciais preenchidas e submetidas para {usuario}!")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=4000)
+            except Exception:
+                await page.wait_for_timeout(2000)
+            return True
+    except Exception as e:
+        logger.warning(f"[AUTO-LOGIN] Erro ao preencher credenciais: {e}")
+    return False
+
+@app.post("/remota/auto-login")
+async def remota_auto_login(req: RemotaAutoLoginRequest):
+    async with remote_browser.lock:
+        target_user = req.usuario or remote_browser.usuario
+        if not target_user:
+            return {"success": False, "mensagem": "Nenhum usuário especificado."}
+        if not remote_browser.page or remote_browser.page.is_closed():
+            return {"success": False, "mensagem": "Navegador remoto não está ativo no momento."}
+
+        ok = await auto_preencher_e_logar(remote_browser.page, target_user)
+        remote_browser.url = remote_browser.page.url
+        try: remote_browser.title = await remote_browser.page.title()
+        except Exception: pass
+        remote_browser.last_activity = asyncio.get_event_loop().time()
+
+        return {
+            "success": ok,
+            "usuario": target_user,
+            "url": remote_browser.url,
+            "title": remote_browser.title,
+            "mensagem": "Credenciais preenchidas e submetidas na tela!" if ok else "Não foi possível preencher (verifique se os campos de login estão visíveis)."
         }
 
 @app.get("/remota/status")
