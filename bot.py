@@ -1,13 +1,61 @@
+import hashlib
 import json
+import os
+import urllib.parse
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 from playwright.sync_api import (
     sync_playwright,
     TimeoutError as PlaywrightTimeoutError
 )
 
+def carregar_env():
+    env_file = Path(".env")
+    if env_file.exists():
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
 
+carregar_env()
+
+def obter_config_proxy(usuario: Optional[str] = None):
+    """Retorna configuração de proxy estruturada para o Playwright com suporte a Bright Data e sessões fixas."""
+    server = os.getenv("PROXY_SERVER", "").strip()
+    username = os.getenv("PROXY_USERNAME", "").strip()
+    password = os.getenv("PROXY_PASSWORD", "").strip()
+    proxy_url = os.getenv("PROXY_URL", "").strip()
+
+    if proxy_url and not server:
+        parsed = urllib.parse.urlparse(proxy_url)
+        server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+        username = parsed.username or ""
+        password = parsed.password or ""
+
+    if not server:
+        return None
+
+    user_final = username
+    if usuario and "zone-" in username and "-session-" not in username:
+        sess_hash = hashlib.md5(usuario.strip().lower().encode()).hexdigest()[:8]
+        user_final = f"{username}-session-{sess_hash}"
+
+    cfg = {"server": server}
+    if user_final:
+        cfg["username"] = user_final
+    if password:
+        cfg["password"] = password
+    return cfg
 
 DADOS_JSON = Path("dados.json")
 RESULTADO_JSON = Path("resultado.json")
@@ -209,11 +257,13 @@ def testar_login(usuario, senha):
             ]
         )
 
+        proxy_config = obter_config_proxy(usuario)
         contexto = navegador.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
             locale="pt-BR",
-            timezone_id="America/Sao_Paulo"
+            timezone_id="America/Sao_Paulo",
+            proxy=proxy_config
         )
         contexto.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });

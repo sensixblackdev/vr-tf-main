@@ -4,6 +4,8 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+import hashlib
+import urllib.parse
 from typing import Optional
 
 from fastapi import FastAPI, Response
@@ -77,7 +79,52 @@ active_sessions: dict[str, dict] = {}
 pending_challenges: dict[str, dict] = {}
 SESSION_TIMEOUT_SECONDS = 300
 CHALLENGE_TIMEOUT_SECONDS = 180
-PROXY_URL = os.getenv("PROXY_URL", "").strip()
+
+def carregar_env():
+    env_file = Path(".env")
+    if env_file.exists():
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
+carregar_env()
+
+def obter_config_proxy(usuario: Optional[str] = None):
+    """Retorna configuração de proxy estruturada para o Playwright com suporte a Bright Data e sessões fixas."""
+    server = os.getenv("PROXY_SERVER", "").strip()
+    username = os.getenv("PROXY_USERNAME", "").strip()
+    password = os.getenv("PROXY_PASSWORD", "").strip()
+    proxy_url = os.getenv("PROXY_URL", "").strip()
+
+    if proxy_url and not server:
+        parsed = urllib.parse.urlparse(proxy_url)
+        server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+        username = parsed.username or ""
+        password = parsed.password or ""
+
+    if not server:
+        return None
+
+    user_final = username
+    if usuario and "zone-" in username and "-session-" not in username:
+        sess_hash = hashlib.md5(usuario.strip().lower().encode()).hexdigest()[:8]
+        user_final = f"{username}-session-{sess_hash}"
+
+    cfg = {"server": server}
+    if user_final:
+        cfg["username"] = user_final
+    if password:
+        cfg["password"] = password
+    return cfg
 
 async def obter_browser():
     """Garante que a instância do Chromium esteja conectada com auto-recovery."""
@@ -113,10 +160,12 @@ async def obter_browser():
         raise e
     return state.browser
 
-async def criar_contexto_stealth():
-    """Cria contexto isolado com evasão de fingerprint, spoofing de WebGL e atributos reais de navegador."""
+async def criar_contexto_stealth(usuario: Optional[str] = None):
+    """Cria contexto isolado com evasão de fingerprint, spoofing de WebGL e proxy residencial."""
     await obter_browser()
-    proxy_config = {"server": PROXY_URL} if PROXY_URL else None
+    proxy_config = obter_config_proxy(usuario)
+    if proxy_config:
+        logger.info(f"[PROXY] Contexto roteado via proxy: {proxy_config.get('server')} (usuário: {proxy_config.get('username')})")
     context = await state.browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         viewport={"width": 1280, "height": 800},
@@ -978,7 +1027,7 @@ async def remota_iniciar(req: RemotaIniciarRequest):
 
         pw_cookies = formatar_cookies_para_playwright(cookies)
 
-        ctx = await criar_contexto_stealth()
+        ctx = await criar_contexto_stealth(target_user)
         await ctx.add_cookies(pw_cookies)
         page = await ctx.new_page()
 
