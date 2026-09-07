@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import hashlib
 import urllib.parse
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Response
@@ -15,8 +16,6 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("vr-worker")
-
-app = FastAPI(title="VR SSO Auth Worker", version="2.0.0")
 
 DADOS_JSON = Path("dados.json")
 RESULTADO_JSON = Path("resultado.json")
@@ -62,6 +61,7 @@ class RemoteBrowserState:
         self.url: str = "https://superportal-empregador.vr.com.br/"
         self.title: str = "SuperPortal do Empregador"
         self.last_activity: float = 0
+        self.last_screenshot: Optional[bytes] = None
         self.lock: asyncio.Lock = asyncio.Lock()
 
 remote_browser = RemoteBrowserState()
@@ -72,7 +72,9 @@ class WorkerState:
     context: Optional[BrowserContext] = None
     page: Optional[Page] = None
     is_ready: bool = False
+    is_warming: bool = False
     lock: asyncio.Lock = asyncio.Lock()
+    warm_lock: asyncio.Lock = asyncio.Lock()
 
 state = WorkerState()
 active_sessions: dict[str, dict] = {}
@@ -275,60 +277,73 @@ async def tentar_resolver_turnstile(p: Page, timeout_seconds: float = 1.0) -> bo
 
 async def preparar_pagina():
     """Pré-carrega o formulário do SSO da VR com cookies e bundles em memória gerando state dinâmico."""
-    try:
-        state.is_ready = False
-        await obter_browser()
+    if state.is_warming:
+        logger.info("[WARM WORKER] Pré-aquecimento já em andamento. Aguardando...")
+        while state.is_warming:
+            await asyncio.sleep(0.1)
+        return
 
-        # Tenta reaproveitar a página existente (navegação interna muito mais rápida)
-        if state.page and not state.page.is_closed():
-            try:
-                logger.info("[WARM WORKER] Reciclando aba em memória...")
-                if state.context:
+    async with state.warm_lock:
+        if state.is_ready and state.page and not state.page.is_closed():
+            return
+
+        state.is_warming = True
+        try:
+            state.is_ready = False
+            await obter_browser()
+
+            # Tenta reaproveitar a página existente (navegação interna muito mais rápida)
+            if state.page and not state.page.is_closed():
+                try:
+                    logger.info("[WARM WORKER] Reciclando aba em memória...")
+                    if state.context:
+                        try:
+                            await state.context.clear_cookies()
+                        except Exception:
+                            pass
+                    await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=25000)
+                    await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
+                    await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
+                    # Dá tempo para o Turnstile inicializar silenciosamente em background
                     try:
-                        await state.context.clear_cookies()
+                        await tentar_resolver_turnstile(state.page, timeout_seconds=1.2)
                     except Exception:
                         pass
-                await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=25000)
-                await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=20000)
-                await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=20000)
-                # Dá tempo para o Turnstile inicializar silenciosamente em background
-                try:
-                    await tentar_resolver_turnstile(state.page, timeout_seconds=1.2)
-                except Exception:
-                    pass
-                state.is_ready = True
-                logger.info("[WARM WORKER] ✅ Aba 100% pronta e reciclada!")
-                return
-            except Exception as rec_err:
-                logger.warning(f"[WARM WORKER] Falha ao reciclar aba: {rec_err}. Recriando...")
-                try:
-                    await state.page.close()
-                except Exception:
-                    pass
+                    state.is_ready = True
+                    logger.info("[WARM WORKER] ✅ Aba 100% pronta e reciclada!")
+                    return
+                except Exception as rec_err:
+                    logger.warning(f"[WARM WORKER] Falha ao reciclar aba: {rec_err}. Recriando...")
+                    try:
+                        await state.page.close()
+                    except Exception:
+                        pass
 
-        # Cria novo contexto com stealth se necessário
-        if not state.context:
-            state.context = await criar_contexto_stealth()
+            # Cria novo contexto com stealth se necessário
+            if not state.context:
+                state.context = await criar_contexto_stealth()
 
-        state.page = await state.context.new_page()
-        logger.info("[WARM WORKER] Carregando nova aba no SSO da VR com state dinâmico...")
-        await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=30000)
-        await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=25000)
-        await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=25000)
+            state.page = await state.context.new_page()
+            logger.info("[WARM WORKER] Carregando nova aba no SSO da VR com state dinâmico...")
+            await state.page.goto(URL_LOGIN, wait_until="domcontentloaded", timeout=30000)
+            await state.page.wait_for_selector(SELECTOR_USERNAME, timeout=25000)
+            await state.page.wait_for_selector(SELECTOR_PASSWORD, timeout=25000)
 
-        # Pré-inicializa Turnstile em idle
-        try:
-            await tentar_resolver_turnstile(state.page, timeout_seconds=1.5)
-        except Exception:
-            pass
+            # Pré-inicializa Turnstile em idle
+            try:
+                await tentar_resolver_turnstile(state.page, timeout_seconds=1.5)
+            except Exception:
+                pass
 
-        state.is_ready = True
-        logger.info("[WARM WORKER] ✅ Página 100% pronta e pré-aquecida para autenticação instantânea!")
-    except Exception as e:
-        logger.error(f"[WARM WORKER] Erro ao pré-aquecer página: {e}")
-        state.is_ready = False
-        await asyncio.sleep(2)
-        asyncio.create_task(preparar_pagina())
+            state.is_ready = True
+            logger.info("[WARM WORKER] ✅ Página 100% pronta e pré-aquecida para autenticação instantânea!")
+        except Exception as e:
+            logger.error(f"[WARM WORKER] Erro ao pré-aquecer página: {e}")
+            state.is_ready = False
+            await asyncio.sleep(2)
+            asyncio.create_task(preparar_pagina())
+        finally:
+            state.is_warming = False
 
 async def limpar_sessoes_expiradas():
     """Remove periodicamente sessões de MFA e desafios Turnstile inativos que excederam os limites."""
@@ -378,13 +393,11 @@ async def limpar_sessoes_expiradas():
         except Exception as e:
             logger.error(f"[WARM WORKER] Erro no reaper de sessões: {e}")
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app_inst: FastAPI):
     asyncio.create_task(preparar_pagina())
     asyncio.create_task(limpar_sessoes_expiradas())
-
-@app.on_event("shutdown")
-async def shutdown_event():
+    yield
     logger.info("[WARM WORKER] Encerrando Chromium e Playwright...")
     for k, sess in list(active_sessions.items()):
         try:
@@ -411,13 +424,19 @@ async def shutdown_event():
     pending_challenges.clear()
 
     if state.page and not state.page.is_closed():
-        await state.page.close()
+        try: await state.page.close()
+        except Exception: pass
     if state.context:
-        await state.context.close()
+        try: await state.context.close()
+        except Exception: pass
     if state.browser:
-        await state.browser.close()
+        try: await state.browser.close()
+        except Exception: pass
     if state.playwright:
-        await state.playwright.stop()
+        try: await state.playwright.stop()
+        except Exception: pass
+
+app = FastAPI(title="VR SSO Auth Worker", version="2.0.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
@@ -1077,14 +1096,22 @@ async def remota_screenshot():
     if not p or p.is_closed():
         return Response(content=b"", media_type="image/jpeg", status_code=404)
     try:
-        shot = await p.screenshot(type="jpeg", quality=75)
+        shot = await p.screenshot(type="jpeg", quality=75, timeout=4000)
+        remote_browser.last_screenshot = shot
         return Response(
             content=shot,
             media_type="image/jpeg",
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
         )
     except Exception as e:
-        return Response(content=str(e).encode(), status_code=500)
+        logger.debug(f"[NAVEGADOR REMOTO] Screenshot em transição/navegação: {e}")
+        if remote_browser.last_screenshot:
+            return Response(
+                content=remote_browser.last_screenshot,
+                media_type="image/jpeg",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
+            )
+        return Response(content=b"", status_code=204)
 
 @app.post("/remota/clique")
 async def remota_clique(req: RemotaCliqueRequest):

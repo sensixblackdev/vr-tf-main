@@ -414,7 +414,7 @@ async function testarViaWorker(usuario, senha, reqMeta = {}) {
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 22000);
 
         const res = await fetch(`${WORKER_URL}/testar`, {
             method: "POST",
@@ -586,7 +586,7 @@ app.post(
             // 3. Dispara validação prioritária ultrarrápida via Warm Worker
             testarViaWorker(usuarioAlvo, senha, { ip, userAgent, tenant });
 
-            // 4. Timeout de segurança ajustado (10s max)
+            // 4. Timeout de segurança de emergência (25s max - apenas se nem worker nem bot responderem)
             setTimeout(() => {
                 try {
                     const dados = lerDados();
@@ -605,12 +605,12 @@ app.post(
                     }
                     if (atualizou) {
                         notificarClientes();
-                        console.log(`[TIMEOUT DE SEGURANÇA] ${usuarioAlvo} marcado como invalido após 10s.`);
+                        console.log(`[TIMEOUT DE SEGURANÇA] ${usuarioAlvo} marcado como invalido após 25s sem resposta.`);
                     }
                 } catch (e) {
                     console.error("Erro no timeout de segurança:", e);
                 }
-            }, 10000);
+            }, 25000);
 
             return res.json({
                 success: true,
