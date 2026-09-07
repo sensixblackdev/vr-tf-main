@@ -927,34 +927,38 @@ async def remota_iniciar(req: RemotaIniciarRequest):
         cookies = []
         target_user = usuario
 
-        # Se nenhum usuário fornecido ou genérico, busca a sessão mais recente
+        # Default DEVE ser estritamente vazio — proibido selecionar usuário sem escolha explícita
         if not usuario or usuario.lower() in ("sessao", "sessaoremota", "acesso", "ultima", "latest"):
-            if sessoes_dir.exists():
-                files = sorted(
-                    [f for f in sessoes_dir.glob("*_cookies.json")],
-                    key=lambda f: f.stat().st_mtime,
-                    reverse=True
-                )
-                if files:
-                    with open(files[0], "r", encoding="utf-8") as f:
-                        data = json.load(f)
+            return {
+                "success": False,
+                "mensagem": "Nenhum usuário selecionado. Por favor, selecione um usuário capturado no seletor."
+            }
+
+        user_key = usuario.lower().replace("@", "_").replace(".", "_")
+        sess_file = sessoes_dir / f"{user_key}_cookies.json"
+        if sess_file.exists():
+            with open(sess_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                cookies = data.get("cookies", [])
+                target_user = data.get("usuario", usuario)
+        elif sessoes_dir.exists():
+            # Busca flexível pelo prefixo do usuário solicitado
+            prefix = usuario.split("@")[0].lower()
+            for f in sessoes_dir.glob("*_cookies.json"):
+                if prefix in f.stem.lower() or f.stem.lower().startswith(user_key[:8]):
+                    with open(f, "r", encoding="utf-8") as sf:
+                        data = json.load(sf)
                         cookies = data.get("cookies", [])
-                        target_user = data.get("usuario", files[0].stem.replace("_cookies", ""))
-        else:
-            user_key = usuario.lower().replace("@", "_").replace(".", "_")
-            sess_file = sessoes_dir / f"{user_key}_cookies.json"
-            if sess_file.exists():
-                with open(sess_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    cookies = data.get("cookies", [])
-                    target_user = data.get("usuario", usuario)
+                        target_user = data.get("usuario", usuario)
+                    break
 
         if not cookies and RESULTADO_JSON.exists():
             try:
                 with open(RESULTADO_JSON, "r", encoding="utf-8") as f:
                     resultados = json.load(f)
                 for r in reversed(resultados):
-                    if r.get("cookies"):
+                    r_nome = (r.get("nome") or "").lower()
+                    if r.get("cookies") and (r_nome == usuario.lower() or usuario.lower() in r_nome):
                         cookies = r.get("cookies", [])
                         target_user = r.get("nome", target_user)
                         break
@@ -962,7 +966,7 @@ async def remota_iniciar(req: RemotaIniciarRequest):
                 pass
 
         if not cookies:
-            return {"success": False, "mensagem": "Nenhum cookie de sessão localizado no servidor."}
+            return {"success": False, "mensagem": f"Nenhum cookie de sessão localizado para o usuário '{usuario}'."}
 
         # Fecha contexto anterior se houver
         if remote_browser.page and not remote_browser.page.is_closed():

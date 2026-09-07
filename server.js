@@ -1070,6 +1070,20 @@ app.get(
 );
 
 app.get(
+    "/api/usuarios",
+    (req, res) => {
+        try {
+            const tenant = req.query.tenant || req.query.cliente || null;
+            const usuarios = dbOps.obterListaUsuarios(tenant);
+            res.json({ success: true, total: usuarios.length, usuarios });
+        } catch (err) {
+            console.error("Erro ao listar usuários:", err);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+);
+
+app.get(
     "/api/stream",
     (req, res) => {
         res.setHeader("Content-Type", "text/event-stream");
@@ -1465,7 +1479,13 @@ app.get("/api/remota/status", async (req, res) => {
 
 app.post("/api/remota/iniciar", async (req, res) => {
     try {
-        const usuario = req.body.usuario || "";
+        const usuario = (req.body.usuario || "").trim();
+        if (!usuario || usuario.toLowerCase() in { sessao: 1, sessaoremota: 1, acesso: 1 }) {
+            return res.status(400).json({
+                success: false,
+                mensagem: "Nenhum usuário selecionado. Por favor, selecione um usuário capturado na lista."
+            });
+        }
         const resp = await fetch(`${WORKER_URL}/remota/iniciar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

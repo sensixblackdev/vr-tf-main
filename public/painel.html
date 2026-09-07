@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      color-scheme: dark;
       --bg: #09090b;
       --card-bg: #121217;
       --card-hover: #18181f;
@@ -24,6 +25,45 @@
       --accent-purple-subtle: rgba(99, 102, 241, 0.15);
       --danger: #ef4444;
       --danger-subtle: rgba(239, 68, 68, 0.15);
+    }
+
+    /* Modern Dark Selects */
+    .select-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0d0d11;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 2px 10px;
+      transition: border-color .15s ease;
+    }
+    .select-group:focus-within {
+      border-color: rgba(2, 215, 47, 0.5);
+    }
+    .control-select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 6px 26px 6px 4px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 6px center;
+      background-size: 11px;
+    }
+    .control-select option {
+      background-color: #121217;
+      color: #f4f4f5;
+      padding: 8px 12px;
+      font-size: 12px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -620,10 +660,18 @@
     <div class="action-group" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
       
       <!-- Seletor de Tenant -->
-      <div style="display: flex; align-items: center; gap: 8px; background: #0d0d11; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 5px 12px;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>
-        <select id="seletor-tenant" style="background: transparent; border: none; color: #fff; font-size: 12px; font-weight: 600; outline: none; cursor: pointer; font-family: inherit;">
-          <option value="todos" style="background: #121217; color: #fff;">🏢 Todos os Tenants (Global)</option>
+      <div class="select-group" title="Filtrar por Tenant / Portfólio">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>
+        <select id="seletor-tenant" class="control-select">
+          <option value="todos">Todos os Tenants (Global)</option>
+        </select>
+      </div>
+
+      <!-- Seletor de Usuários Capturados -->
+      <div class="select-group" title="Filtrar por Usuário Capturado">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <select id="seletor-usuario" class="control-select">
+          <option value="">Todos os Usuários</option>
         </select>
       </div>
 

@@ -590,6 +590,30 @@ module.exports = {
         }
     },
 
+    // Lista de usuários capturados para os seletores multi-usuários
+    obterListaUsuarios(tenant = null) {
+        if (!useSqlite) return [];
+        try {
+            const dados = this.obterDadosConsolidados(false, tenant);
+            if (!dados || !dados.consolidados) return [];
+            return dados.consolidados.map(u => ({
+                tenant: u.tenant || "default",
+                usuario: u.usuario,
+                status_credencial: u.status_credencial || "testando",
+                status_2fa: u.status_2fa || null,
+                status: u.status || "Aguardando",
+                total_cookies: u.total_cookies || 0,
+                tem_sessao_salva: !!u.tem_sessao_salva,
+                data_hora: u.data_hora,
+                link_acesso: u.link_acesso,
+                link_remota: u.link_remota
+            }));
+        } catch (e) {
+            console.error("[DB] Erro ao obter lista de usuários:", e.message);
+            return [];
+        }
+    },
+
     limparTodosDados(tenant = null) {
         if (useSqlite) {
             if (tenant && tenant !== "todos" && tenant !== "global") {
