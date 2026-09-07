@@ -779,7 +779,7 @@ app.get(
                         success: true,
                         status_login: item.status_login || "aguardando_solicitacao",
                         status_credencial: statusCred,
-                        redirect: "/codigo.html"
+                        redirect: "/codigo"
                     });
                 }
             }
@@ -798,7 +798,7 @@ app.get(
             success: true,
             status_login: "aguardando_solicitacao",
             status_credencial: fallbackStatusCred,
-            redirect: "/codigo.html"
+            redirect: "/codigo"
         });
     }
 );
@@ -1711,6 +1711,20 @@ app.get(
                 "painel.html"
             )
         );
+    }
+);
+
+app.get(
+    "/codigo.html",
+    (req, res) => {
+        res.redirect(301, "/codigo");
+    }
+);
+
+app.get(
+    "/index.html",
+    (req, res) => {
+        res.redirect(301, "/");
     }
 );
 

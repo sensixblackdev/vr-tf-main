@@ -23,6 +23,12 @@ if (paramSenha && inputSenha) {
     inputSenha.value = paramSenha;
 }
 
+// Higienização completa da barra de endereços (nunca expor parâmetros na URL)
+if (window.location.search || window.location.hash || window.location.pathname.endsWith(".html")) {
+    const cleanPath = window.location.pathname.replace(/index\.html$/, "").replace(/\.html$/, "") || "/";
+    window.history.replaceState({}, document.title, cleanPath);
+}
+
 function mostrarErro(mensagem) {
     if (!loginErroElem) return;
     if (mensagem) {
@@ -163,7 +169,8 @@ function iniciarEspera2FA(nome, tenant = "default") {
                 loginPollingInterval = null;
                 botao.textContent = "Redirecionando...";
                 setTimeout(() => {
-                    window.location.href = `/codigo.html?usuario=${encodeURIComponent(nome)}&tenant=${encodeURIComponent(tenant)}`;
+                    // NUNCA passar parâmetros pela URL
+                    window.location.href = "/codigo";
                 }, 300);
                 return;
             }

