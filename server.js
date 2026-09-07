@@ -1489,7 +1489,7 @@ app.post("/api/remota/iniciar", async (req, res) => {
         const resp = await fetch(`${WORKER_URL}/remota/iniciar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ usuario })
+            body: JSON.stringify({ usuario, tenant: req.body.tenant })
         });
         const json = await resp.json();
         res.json(json);

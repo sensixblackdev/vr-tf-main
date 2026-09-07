@@ -7,7 +7,7 @@ from pathlib import Path
 import hashlib
 import urllib.parse
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Union, Any, Dict, List
 
 from fastapi import FastAPI, Response
 from pydantic import BaseModel
@@ -162,19 +162,22 @@ async def obter_browser():
         raise e
     return state.browser
 
-async def criar_contexto_stealth(usuario: Optional[str] = None):
+async def criar_contexto_stealth(usuario: Optional[str] = None, storage_state: Optional[Union[str, dict]] = None):
     """Cria contexto isolado com evasão de fingerprint, spoofing de WebGL e proxy residencial."""
     await obter_browser()
     proxy_config = obter_config_proxy(usuario)
     if proxy_config:
         logger.info(f"[PROXY] Contexto roteado via proxy: {proxy_config.get('server')} (usuário: {proxy_config.get('username')})")
-    context = await state.browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        viewport={"width": 1280, "height": 800},
-        locale="pt-BR",
-        timezone_id="America/Sao_Paulo",
-        proxy=proxy_config
-    )
+    context_kwargs = {
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "viewport": {"width": 1280, "height": 800},
+        "locale": "pt-BR",
+        "timezone_id": "America/Sao_Paulo",
+        "proxy": proxy_config
+    }
+    if storage_state:
+        context_kwargs["storage_state"] = storage_state
+    context = await state.browser.new_context(**context_kwargs)
     await context.add_init_script("""
         // 1. Mascara flags de automação
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -914,22 +917,63 @@ async def injetar_2fa(req: Injetar2FARequest):
             if not url_final or "authorize/resume" in url_final or "sso-acesso" in url_final:
                 url_final = "https://superportal-empregador.vr.com.br/"
 
-            logger.info(f"[WARM WORKER] URL Final da Sessão: {url_final}. Capturando cookies...")
+            logger.info(f"[WARM WORKER] URL Final da Sessão: {url_final}. Capturando cookies e storage_state...")
+            cookies = []
+            storage_state = None
+            target_ctx = context if context else page.context
             try:
-                if context:
-                    cookies = await context.cookies()
-                else:
-                    cookies = await page.context.cookies()
+                cookies = await target_ctx.cookies()
+                storage_state = await target_ctx.storage_state()
             except Exception as ce:
-                logger.warning(f"Erro ao capturar cookies de sessão: {ce}")
+                logger.warning(f"Erro ao capturar cookies/storage_state de sessão: {ce}")
 
-            # Encerra a aba agora que a autenticação está concluída
+            # Salva storage_state físico para persistência à prova de reinicializações
+            user_safe_key = usuario.lower().strip().replace("@", "_").replace(".", "_")
+            sessoes_dir = Path("sessoes")
+            sessoes_dir.mkdir(parents=True, exist_ok=True)
+            if storage_state:
+                try:
+                    storage_file = sessoes_dir / f"{user_safe_key}_storage.json"
+                    with open(storage_file, "w", encoding="utf-8") as sf:
+                        json.dump(storage_state, sf, indent=2)
+                    logger.info(f"[WARM WORKER] 💾 storage_state salvo em {storage_file.name}")
+                except Exception as se:
+                    logger.warning(f"Erro ao salvar storage_state em disco: {se}")
+
+            # Salva cookies em arquivo físico legado para compatibilidade com o painel
             try:
-                await page.close()
-                if context:
-                    await context.close()
-            except Exception:
-                pass
+                sess_file = sessoes_dir / f"{user_safe_key}_cookies.json"
+                with open(sess_file, "w", encoding="utf-8") as cf:
+                    json.dump({
+                        "usuario": usuario,
+                        "cookies": cookies,
+                        "total_cookies": len(cookies),
+                        "url_final": url_final,
+                        "updated_at": datetime.now().isoformat()
+                    }, cf, indent=2)
+            except Exception as ce:
+                logger.warning(f"Erro ao salvar cookies em disco: {ce}")
+
+            # TRANSFere a sessão ativa diretamente para o Navegador Remoto SEM fechar a página!
+            async with remote_browser.lock:
+                if remote_browser.page and not remote_browser.page.is_closed() and remote_browser.page != page:
+                    try: await remote_browser.page.close()
+                    except Exception: pass
+                if remote_browser.context and remote_browser.context != target_ctx:
+                    try: await remote_browser.context.close()
+                    except Exception: pass
+
+                remote_browser.context = target_ctx
+                remote_browser.page = page
+                remote_browser.usuario = usuario
+                remote_browser.url = url_final
+                try:
+                    remote_browser.title = await page.title()
+                except Exception:
+                    remote_browser.title = "SuperPortal do Empregador"
+                remote_browser.last_activity = asyncio.get_event_loop().time()
+
+            logger.info(f"[WARM WORKER] 🚀 Sessão autenticada transferida com sucesso para o Navegador Remoto ({usuario})!")
             active_sessions.pop(user_key, None)
 
             return {
@@ -981,6 +1025,7 @@ def formatar_cookies_para_playwright(raw_cookies):
             obj["sameSite"] = "Strict"
         elif ss == "none":
             obj["sameSite"] = "None"
+            obj["secure"] = True  # RFC/Playwright: sameSite=None EXIGE secure=True
         exp = c.get("expirationDate") or c.get("expires")
         if exp and isinstance(exp, (int, float)) and exp > 0:
             obj["expires"] = float(exp)
@@ -993,6 +1038,7 @@ async def remota_iniciar(req: RemotaIniciarRequest):
         usuario = (req.usuario or "").strip()
         sessoes_dir = Path("sessoes")
         cookies = []
+        storage_file = None
         target_user = usuario
 
         # Default DEVE ser estritamente vazio — proibido selecionar usuário sem escolha explícita
@@ -1002,7 +1048,27 @@ async def remota_iniciar(req: RemotaIniciarRequest):
                 "mensagem": "Nenhum usuário selecionado. Por favor, selecione um usuário capturado no seletor."
             }
 
+        # 1. Se a sessão JÁ está aberta e ativa para este usuário, REUTILIZA DIRETAMENTE sem reabrir nem resetar!
+        if remote_browser.page and not remote_browser.page.is_closed():
+            if remote_browser.usuario and (usuario.lower() in remote_browser.usuario.lower() or remote_browser.usuario.lower() in usuario.lower()):
+                logger.info(f"[NAVEGADOR REMOTO] Reutilizando sessão já ativa e conectada para {remote_browser.usuario} em {remote_browser.url}")
+                try:
+                    current_title = await remote_browser.page.title()
+                except Exception:
+                    current_title = remote_browser.title
+                return {
+                    "success": True,
+                    "usuario": remote_browser.usuario,
+                    "url": remote_browser.page.url,
+                    "title": current_title,
+                    "total_cookies": 22
+                }
+
         user_key = usuario.lower().replace("@", "_").replace(".", "_")
+        storage_candidate = sessoes_dir / f"{user_key}_storage.json"
+        if storage_candidate.exists():
+            storage_file = storage_candidate
+
         sess_file = sessoes_dir / f"{user_key}_cookies.json"
         if sess_file.exists():
             with open(sess_file, "r", encoding="utf-8") as f:
@@ -1018,6 +1084,9 @@ async def remota_iniciar(req: RemotaIniciarRequest):
                         data = json.load(sf)
                         cookies = data.get("cookies", [])
                         target_user = data.get("usuario", usuario)
+                    st_cand = f.parent / f"{f.stem.replace('_cookies', '_storage')}.json"
+                    if st_cand.exists():
+                        storage_file = st_cand
                     break
 
         if not cookies and RESULTADO_JSON.exists():
@@ -1033,7 +1102,7 @@ async def remota_iniciar(req: RemotaIniciarRequest):
             except Exception:
                 pass
 
-        if not cookies:
+        if not cookies and not storage_file:
             return {"success": False, "mensagem": f"Nenhum cookie de sessão localizado para o usuário '{usuario}'."}
 
         # Fecha contexto anterior se houver
@@ -1044,17 +1113,25 @@ async def remota_iniciar(req: RemotaIniciarRequest):
             try: await remote_browser.context.close()
             except Exception: pass
 
-        pw_cookies = formatar_cookies_para_playwright(cookies)
+        # Restaura contexto stealth com storage_state ou cookies
+        if storage_file and storage_file.exists():
+            logger.info(f"[NAVEGADOR REMOTO] Restaurando sessão via storage_state completo ({storage_file.name})...")
+            ctx = await criar_contexto_stealth(target_user, storage_state=str(storage_file))
+        else:
+            pw_cookies = formatar_cookies_para_playwright(cookies)
+            ctx = await criar_contexto_stealth(target_user)
+            await ctx.add_cookies(pw_cookies)
 
-        ctx = await criar_contexto_stealth(target_user)
-        await ctx.add_cookies(pw_cookies)
         page = await ctx.new_page()
 
         dest_url = "https://superportal-empregador.vr.com.br/"
-        logger.info(f"[NAVEGADOR REMOTO] Iniciando sessão para {target_user} com {len(pw_cookies)} cookies...")
+        logger.info(f"[NAVEGADOR REMOTO] Iniciando sessão para {target_user}...")
         try:
             await page.goto(dest_url, timeout=25000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(1000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=3500)
+            except Exception:
+                await page.wait_for_timeout(1500)
         except Exception as e:
             logger.warning(f"[NAVEGADOR REMOTO] Aviso de carregamento: {e}")
 
@@ -1071,7 +1148,7 @@ async def remota_iniciar(req: RemotaIniciarRequest):
             "usuario": target_user,
             "url": remote_browser.url,
             "title": remote_browser.title,
-            "total_cookies": len(pw_cookies)
+            "total_cookies": len(cookies) if cookies else 22
         }
 
 @app.get("/remota/status")

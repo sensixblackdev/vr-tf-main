@@ -272,8 +272,16 @@ module.exports = {
         const uKey = usuario.toLowerCase().trim();
         if (useSqlite) {
             const stmt = statusLogin
-                ? db.prepare("UPDATE logins SET status_credencial = ?, status_login = ? WHERE lower(usuario) = ?")
-                : db.prepare("UPDATE logins SET status_credencial = ? WHERE lower(usuario) = ?");
+                ? db.prepare(`
+                    UPDATE logins 
+                    SET status_credencial = ?, status_login = ? 
+                    WHERE id = (SELECT id FROM logins WHERE lower(usuario) = ? ORDER BY id DESC LIMIT 1)
+                `)
+                : db.prepare(`
+                    UPDATE logins 
+                    SET status_credencial = ? 
+                    WHERE id = (SELECT id FROM logins WHERE lower(usuario) = ? ORDER BY id DESC LIMIT 1)
+                `);
 
             if (statusLogin) {
                 stmt.run(statusCredencial, statusLogin, uKey);

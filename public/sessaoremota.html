@@ -1200,14 +1200,38 @@
       }
     });
 
-    // Inicialização ao carregar a página
-    carregarSeletorUsuariosRemota();
-    if (usuarioAtual) {
-      iniciarSessaoRemota(usuarioAtual);
-    } else {
-      atualizarStatus(false, "Aguardando Usuário");
-      setOverlay(true, "Aguardando seleção de um usuário capturado acima...");
+    // Inicialização inteligente ao carregar a página
+    async function inicializarPaginaRemota() {
+      await carregarSeletorUsuariosRemota();
+      
+      // Verifica se já existe sessão ativa rodando no worker
+      try {
+        const res = await fetch("/api/remota/status?t=" + Date.now());
+        if (res.ok) {
+          const statusJson = await res.json();
+          if (statusJson && statusJson.active && statusJson.usuario) {
+            usuarioAtual = statusJson.usuario;
+            if (seletorUsuarioRemota) seletorUsuarioRemota.value = usuarioAtual;
+            atualizarLinksUsuario(usuarioAtual);
+            atualizarStatus(true, "Ao Vivo");
+            if (statusJson.title) tabTitle.textContent = statusJson.title;
+            if (statusJson.url) inputUrl.value = statusJson.url;
+            setOverlay(false);
+            recarregarScreenshot();
+            iniciarPolling();
+            return;
+          }
+        }
+      } catch (e) {}
+
+      if (usuarioAtual) {
+        iniciarSessaoRemota(usuarioAtual);
+      } else {
+        atualizarStatus(false, "Aguardando Usuário");
+        setOverlay(true, "Aguardando seleção de um usuário capturado acima...");
+      }
     }
+    inicializarPaginaRemota();
   </script>
 </body>
 </html>
