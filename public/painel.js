@@ -273,6 +273,10 @@ async function carregarDados() {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache" }
     });
+    if (res.status === 401) {
+      window.location.href = "/login-painel?redirect=" + encodeURIComponent(window.location.pathname + window.location.search);
+      return;
+    }
     if (!res.ok) throw new Error("Falha HTTP");
     const json = await res.json();
     if (json.success) {
@@ -298,12 +302,17 @@ async function carregarAuditoria() {
   try {
     const queryLogs = "/api/audit-logs?limit=150&t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
     const res = await fetch(queryLogs);
+    if (res.status === 401) {
+      window.location.href = "/login-painel?redirect=" + encodeURIComponent(window.location.pathname + window.location.search);
+      return;
+    }
     const json = await res.json();
     if (json.success) {
       dadosAuditoria = json.logs || [];
     }
     const queryStats = "/api/audit-stats?t=" + Date.now() + (tenantAtivo ? "&tenant=" + encodeURIComponent(tenantAtivo) : "");
     const resStats = await fetch(queryStats);
+    if (resStats.status === 401) return;
     const jsonStats = await resStats.json();
     if (jsonStats.success) {
       statsAuditoria = jsonStats.stats;
@@ -1085,6 +1094,15 @@ function conectarSSE() {
 if (linkSessaoRemotaTop && tenantAtivo) {
   linkSessaoRemotaTop.href = `/sessaoremota.html?tenant=${encodeURIComponent(tenantAtivo)}`;
 }
+// Função para logout e bloqueio imediato do painel
+async function encerrarSessao() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (e) {}
+  window.location.href = "/login-painel";
+}
+window.encerrarSessao = encerrarSessao;
+
 carregarTenants();
 carregarDados();
 conectarSSE();

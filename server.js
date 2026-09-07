@@ -4,6 +4,7 @@ const path = require("path");
 const { execFile } = require("child_process");
 const dbOps = require("./db");
 const audit = require("./audit");
+const auth = require("./auth");
 
 process.on("uncaughtException", (err) => {
     console.error("[CRITICAL] Uncaught Exception:", err.message || err);
@@ -247,6 +248,51 @@ app.use((req, res, next) => {
 app.use(
     express.json()
 );
+
+// Endpoints de Autenticação do Painel (PIN de 12 dígitos)
+app.get("/login-painel", (req, res) => {
+    if (auth.verificarAutenticacao(req)) {
+        const dest = req.query.redirect || "/painel";
+        return res.redirect(dest);
+    }
+    res.sendFile(path.join(PUBLIC_DIR, "login-painel.html"));
+});
+
+app.post("/api/auth/pin", (req, res) => {
+    const { pin } = req.body || {};
+    if (!pin || !auth.validarPIN(pin)) {
+        return res.status(401).json({
+            success: false,
+            mensagem: "PIN de acesso inválido. Verifique os 12 dígitos digitados."
+        });
+    }
+    const token = auth.criarTokenSessao();
+    res.cookie(auth.COOKIE_NAME, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 24 * 60 * 60 * 1000,
+        secure: req.secure || req.headers["x-forwarded-proto"] === "https"
+    });
+    return res.json({
+        success: true,
+        mensagem: "Autenticação realizada com sucesso.",
+        token
+    });
+});
+
+app.get("/api/auth/status", (req, res) => {
+    const autenticado = auth.verificarAutenticacao(req);
+    res.json({ success: true, autenticado });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+    res.clearCookie(auth.COOKIE_NAME, { path: "/" });
+    res.json({ success: true, mensagem: "Sessão encerrada com sucesso." });
+});
+
+// Middleware de Proteção de Rotas do Painel Operacional
+app.use(auth.authPainelMiddleware);
 
 app.use(
     express.static(PUBLIC_DIR)
