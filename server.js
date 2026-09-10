@@ -291,6 +291,148 @@ app.post("/api/auth/logout", (req, res) => {
     res.json({ success: true, mensagem: "Sessão encerrada com sucesso." });
 });
 
+// ==========================================
+// MÓDULO DE TELEMETRIA DE TRÁFEGO, FONTES E CLIQUES UTM
+// Rota pública solicitada: supervr.shop/utm
+// ==========================================
+
+// 1. Interface Web do Painel Analítico UTM
+app.get(["/utm", "/utm.html"], (req, res) => {
+    res.sendFile(path.join(PUBLIC_DIR, "utm.html"));
+});
+
+// 2. Rota de Redirecionamento Inteligente com Tracking Automático (/utm/go ou /go)
+app.get(["/utm/go", "/go", "/r"], (req, res) => {
+    try {
+        const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+        const userAgent = req.headers["user-agent"] || "";
+        const referrer = req.headers["referer"] || req.headers["referrer"] || "";
+        const q = req.query || {};
+
+        dbOps.registrarCliqueUTM({
+            tenant: q.tenant || "default",
+            ip,
+            userAgent,
+            referrer,
+            landingUrl: req.originalUrl,
+            utm_source: q.utm_source || "",
+            utm_medium: q.utm_medium || "",
+            utm_campaign: q.utm_campaign || "",
+            utm_term: q.utm_term || "",
+            utm_content: q.utm_content || "",
+            raw_query: req.url.includes("?") ? req.url.split("?")[1] : ""
+        });
+    } catch (e) {
+        console.error("[UTM] Erro ao registrar clique em redirecionador:", e);
+    }
+
+    // Redireciona para a landing principal mantendo todas as query strings
+    const search = req.url.includes("?") ? `?${req.url.split("?")[1]}` : "";
+    return res.redirect(`/${search}`);
+});
+
+// 3. API Pública de Registro de Clique / Visita (Beacon / Fetch)
+app.post("/api/utm/track", (req, res) => {
+    try {
+        const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+        const userAgent = req.headers["user-agent"] || "";
+        const referrer = req.body.referrer || req.headers["referer"] || req.headers["referrer"] || "";
+        const b = req.body || {};
+
+        const resultado = dbOps.registrarCliqueUTM({
+            tenant: b.tenant || "default",
+            ip,
+            userAgent,
+            referrer,
+            landingUrl: b.landing_url || "",
+            utm_source: b.utm_source || "",
+            utm_medium: b.utm_medium || "",
+            utm_campaign: b.utm_campaign || "",
+            utm_term: b.utm_term || "",
+            utm_content: b.utm_content || "",
+            raw_query: b.raw_query || ""
+        });
+
+        return res.json({ success: true, tracking: resultado });
+    } catch (e) {
+        console.error("[UTM TRACK ERROR]", e);
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4. API de Métricas Agregadas UTM
+app.get("/api/utm/stats", (req, res) => {
+    try {
+        const tenant = req.query.tenant || null;
+        const periodo = req.query.periodo || "todos";
+        const metricas = dbOps.obterMetricasUTM(tenant, periodo);
+        return res.json({ success: true, metricas });
+    } catch (e) {
+        console.error("[UTM STATS ERROR]", e);
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 5. API de Feed Detalhado de Cliques
+app.get("/api/utm/clicks", (req, res) => {
+    try {
+        const tenant = req.query.tenant || null;
+        const limite = parseInt(req.query.limite, 10) || 150;
+        const filtro = req.query.q || null;
+        const cliques = dbOps.obterUltimosCliquesUTM(tenant, limite, filtro);
+        return res.json({ success: true, total: cliques.length, cliques });
+    } catch (e) {
+        console.error("[UTM CLICKS ERROR]", e);
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 6. API de Limpeza de Cliques de Teste (Zero Test Pollution)
+app.post("/api/utm/clear", (req, res) => {
+    try {
+        const tenant = req.body && req.body.tenant;
+        dbOps.limparCliquesUTM(tenant);
+        return res.json({ success: true, mensagem: "Histórico de cliques UTM limpo com sucesso." });
+    } catch (e) {
+        return res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 7. API de Exportação CSV dos Cliques
+app.get("/api/utm/export", (req, res) => {
+    try {
+        const tenant = req.query.tenant || null;
+        const cliques = dbOps.obterUltimosCliquesUTM(tenant, 5000);
+        
+        let csv = "ID,DataHora,Origem,Midia,Campanha,Termo,Conteudo,Dispositivo,Navegador,SO,IP,Referrer,Converteu,Usuario\n";
+        for (const c of cliques) {
+            const linha = [
+                c.id,
+                `"${c.data_hora}"`,
+                `"${(c.utm_source || '').replace(/"/g, '""')}"`,
+                `"${(c.utm_medium || '').replace(/"/g, '""')}"`,
+                `"${(c.utm_campaign || '').replace(/"/g, '""')}"`,
+                `"${(c.utm_term || '').replace(/"/g, '""')}"`,
+                `"${(c.utm_content || '').replace(/"/g, '""')}"`,
+                `"${c.device_type}"`,
+                `"${c.browser}"`,
+                `"${c.os}"`,
+                `"${c.ip}"`,
+                `"${(c.referrer || '').replace(/"/g, '""')}"`,
+                c.converted_login ? "SIM" : "NAO",
+                `"${(c.usuario_convertido || '').replace(/"/g, '""')}"`
+            ].join(",");
+            csv += linha + "\n";
+        }
+
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="supervr-utm-clicks-${Date.now()}.csv"`);
+        return res.send(csv);
+    } catch (e) {
+        return res.status(500).send("Erro ao gerar CSV");
+    }
+});
+
 // Middleware de Proteção de Rotas do Painel Operacional
 app.use(auth.authPainelMiddleware);
 
@@ -622,6 +764,11 @@ app.post(
 
             // 2. Persistência atômica no SQLite com tenant e sincronização com JSON
             dbOps.salvarLogin({ usuario: usuarioAlvo, senha, ip, userAgent, tenant });
+
+            // 2.1 Marca conversão na telemetria de tráfego UTM
+            try {
+                dbOps.marcarConversaoUTM(ip, usuarioAlvo, tenant);
+            } catch (e) {}
 
             notificarClientes();
 

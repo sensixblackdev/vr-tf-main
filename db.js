@@ -74,6 +74,33 @@ try {
             valor TEXT NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS utm_clicks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant TEXT DEFAULT 'default',
+            ip TEXT DEFAULT '',
+            user_agent TEXT DEFAULT '',
+            device_type TEXT DEFAULT 'Desktop',
+            browser TEXT DEFAULT 'Desconhecido',
+            os TEXT DEFAULT 'Desconhecido',
+            referrer TEXT DEFAULT '',
+            landing_url TEXT DEFAULT '',
+            utm_source TEXT DEFAULT '',
+            utm_medium TEXT DEFAULT '',
+            utm_campaign TEXT DEFAULT '',
+            utm_term TEXT DEFAULT '',
+            utm_content TEXT DEFAULT '',
+            raw_query TEXT DEFAULT '',
+            converted_login INTEGER DEFAULT 0,
+            usuario_convertido TEXT DEFAULT '',
+            created_at INTEGER NOT NULL,
+            data_hora TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_utm_source ON utm_clicks(utm_source);
+        CREATE INDEX IF NOT EXISTS idx_utm_campaign ON utm_clicks(utm_campaign);
+        CREATE INDEX IF NOT EXISTS idx_utm_created_at ON utm_clicks(created_at);
+        CREATE INDEX IF NOT EXISTS idx_utm_tenant ON utm_clicks(tenant);
     `);
 
     // Auto-migração retroativa de coluna tenant para bases de dados preexistentes
@@ -93,6 +120,7 @@ try {
     migrarColunaTenant("auth_2fa");
     migrarColunaTenant("audit_logs");
     migrarColunaTenant("sessoes");
+    migrarColunaTenant("utm_clicks");
 
     // Criação dos índices após confirmação das colunas
     db.exec(`
@@ -639,5 +667,369 @@ module.exports = {
             return true;
         }
         return false;
+    },
+
+    // --- MÓDULO UTM & TELEMETRIA DE CLIQUES / SOURCES ---
+    parseUserAgent(ua) {
+        if (!ua || typeof ua !== "string") {
+            return { device: "Desktop", os: "Desconhecido", browser: "Desconhecido" };
+        }
+        const lower = ua.toLowerCase();
+        
+        let device = "Desktop";
+        if (/mobile|iphone|ipod|android.*mobile|windows phone|blackberry/i.test(lower)) {
+            device = "Mobile";
+        } else if (/ipad|tablet|android(?!.*mobile)/i.test(lower)) {
+            device = "Tablet";
+        } else if (/bot|crawler|spider|curl|wget/i.test(lower)) {
+            device = "Bot";
+        }
+
+        let os = "Desconhecido";
+        if (/iphone|ipad|ipod/i.test(lower)) os = "iOS";
+        else if (/android/i.test(lower)) os = "Android";
+        else if (/windows/i.test(lower)) os = "Windows";
+        else if (/macintosh|mac os x/i.test(lower)) os = "macOS";
+        else if (/linux/i.test(lower)) os = "Linux";
+
+        let browser = "Navegador Padrão";
+        if (/edg\//i.test(lower)) browser = "Edge";
+        else if (/instagram/i.test(lower)) browser = "Instagram App";
+        else if (/fbav|fban/i.test(lower)) browser = "Facebook App";
+        else if (/whatsapp/i.test(lower)) browser = "WhatsApp";
+        else if (/chrome|crios/i.test(lower) && !/edg\//i.test(lower)) browser = "Chrome";
+        else if (/safari/i.test(lower) && !/chrome|crios/i.test(lower)) browser = "Safari";
+        else if (/firefox|fxios/i.test(lower)) browser = "Firefox";
+
+        return { device, os, browser };
+    },
+
+    normalizarSource(source, referrer) {
+        if (source && String(source).trim()) {
+            return String(source).trim().toLowerCase();
+        }
+        if (!referrer || typeof referrer !== "string") {
+            return "direto";
+        }
+        const refLower = referrer.toLowerCase();
+        if (refLower.includes("instagram.com") || refLower.includes("l.instagram.com")) return "instagram";
+        if (refLower.includes("facebook.com") || refLower.includes("l.facebook.com") || refLower.includes("fb.com")) return "facebook";
+        if (refLower.includes("whatsapp.com") || refLower.includes("wa.me")) return "whatsapp";
+        if (refLower.includes("t.me") || refLower.includes("telegram.org")) return "telegram";
+        if (refLower.includes("google.com")) return "google";
+        if (refLower.includes("youtube.com")) return "youtube";
+        if (refLower.includes("tiktok.com")) return "tiktok";
+        if (refLower.includes("twitter.com") || refLower.includes("t.co") || refLower.includes("x.com")) return "twitter";
+        return "referral";
+    },
+
+    registrarCliqueUTM({ tenant = "default", ip = "", userAgent = "", referrer = "", landingUrl = "", utm_source = "", utm_medium = "", utm_campaign = "", utm_term = "", utm_content = "", raw_query = "" }) {
+        const now = Date.now();
+        const dataHora = new Date().toLocaleString("pt-BR");
+        const t = (tenant || "default").trim() || "default";
+        const { device, os, browser } = this.parseUserAgent(userAgent);
+        const sourceNormalizado = this.normalizarSource(utm_source, referrer);
+        const mediumNormalizado = (utm_medium || "").trim().toLowerCase() || (sourceNormalizado === "direto" ? "direto" : "organico");
+        const campaignNormalizado = (utm_campaign || "").trim() || "padrao";
+
+        if (useSqlite) {
+            try {
+                const stmt = db.prepare(`
+                    INSERT INTO utm_clicks (
+                        tenant, ip, user_agent, device_type, browser, os,
+                        referrer, landing_url, utm_source, utm_medium, utm_campaign,
+                        utm_term, utm_content, raw_query, converted_login, usuario_convertido,
+                        created_at, data_hora
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)
+                `);
+                const info = stmt.run(
+                    t,
+                    ip,
+                    userAgent,
+                    device,
+                    browser,
+                    os,
+                    referrer || "",
+                    landingUrl || "",
+                    sourceNormalizado,
+                    mediumNormalizado,
+                    campaignNormalizado,
+                    utm_term || "",
+                    utm_content || "",
+                    raw_query || "",
+                    now,
+                    dataHora
+                );
+                return {
+                    id: info.lastInsertRowid,
+                    tenant: t,
+                    source: sourceNormalizado,
+                    medium: mediumNormalizado,
+                    campaign: campaignNormalizado,
+                    device,
+                    data_hora: dataHora
+                };
+            } catch (e) {
+                console.error("[DB] Erro ao registrar clique UTM:", e.message);
+            }
+        }
+        return { id: null, source: sourceNormalizado, data_hora: dataHora };
+    },
+
+    obterMetricasUTM(tenant = null, periodo = "todos") {
+        if (!useSqlite) {
+            return {
+                totalClicks: 0,
+                uniqueVisitors: 0,
+                todayClicks: 0,
+                totalConversions: 0,
+                conversionRate: "0.0%",
+                sources: [],
+                campaigns: [],
+                mediums: [],
+                devices: [],
+                osList: [],
+                browsers: []
+            };
+        }
+
+        try {
+            let whereClauses = [];
+            let params = [];
+
+            if (tenant && tenant !== "todos" && tenant !== "global") {
+                whereClauses.push("tenant = ?");
+                params.push(tenant);
+            }
+
+            const agora = new Date();
+            const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).getTime();
+
+            if (periodo === "hoje") {
+                whereClauses.push("created_at >= ?");
+                params.push(inicioHoje);
+            } else if (periodo === "7dias") {
+                whereClauses.push("created_at >= ?");
+                params.push(Date.now() - 7 * 86400000);
+            } else if (periodo === "30dias") {
+                whereClauses.push("created_at >= ?");
+                params.push(Date.now() - 30 * 86400000);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+            // Total de cliques
+            const totalClicks = db.prepare(`SELECT count(*) as c FROM utm_clicks ${whereSql}`).get(...params).c;
+
+            // Visitantes únicos (IPs distintos)
+            const uniqueVisitors = db.prepare(`SELECT count(DISTINCT ip) as c FROM utm_clicks ${whereSql}`).get(...params).c;
+
+            // Cliques hoje
+            let whereHoje = whereClauses.filter(w => !w.startsWith("created_at"));
+            let paramsHoje = params.slice(0, whereHoje.length);
+            whereHoje.push("created_at >= ?");
+            paramsHoje.push(inicioHoje);
+            const whereHojeSql = `WHERE ${whereHoje.join(" AND ")}`;
+            const todayClicks = db.prepare(`SELECT count(*) as c FROM utm_clicks ${whereHojeSql}`).get(...paramsHoje).c;
+
+            // Conversões em login
+            const convWhere = whereClauses.length > 0 ? `${whereSql} AND converted_login = 1` : "WHERE converted_login = 1";
+            const totalConversions = db.prepare(`SELECT count(*) as c FROM utm_clicks ${convWhere}`).get(...params).c;
+
+            const conversionRate = totalClicks > 0 ? ((totalConversions / totalClicks) * 100).toFixed(1) + "%" : "0.0%";
+
+            // Agrupamento por utm_source
+            const sources = db.prepare(`
+                SELECT utm_source as name, count(*) as count, sum(converted_login) as conversions
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY utm_source
+                ORDER BY count DESC
+                LIMIT 10
+            `).all(...params).map(r => ({
+                name: r.name || "direto",
+                count: r.count,
+                conversions: r.conversions || 0,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            // Agrupamento por utm_campaign
+            const campaigns = db.prepare(`
+                SELECT utm_campaign as name, count(*) as count, sum(converted_login) as conversions
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY utm_campaign
+                ORDER BY count DESC
+                LIMIT 10
+            `).all(...params).map(r => ({
+                name: r.name || "padrao",
+                count: r.count,
+                conversions: r.conversions || 0,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            // Agrupamento por utm_medium
+            const mediums = db.prepare(`
+                SELECT utm_medium as name, count(*) as count
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY utm_medium
+                ORDER BY count DESC
+                LIMIT 8
+            `).all(...params).map(r => ({
+                name: r.name || "direto",
+                count: r.count,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            // Agrupamento por device_type
+            const devices = db.prepare(`
+                SELECT device_type as name, count(*) as count
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY device_type
+                ORDER BY count DESC
+            `).all(...params).map(r => ({
+                name: r.name || "Desktop",
+                count: r.count,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            // Agrupamento por OS
+            const osList = db.prepare(`
+                SELECT os as name, count(*) as count
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY os
+                ORDER BY count DESC
+                LIMIT 6
+            `).all(...params).map(r => ({
+                name: r.name || "Desconhecido",
+                count: r.count,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            // Agrupamento por Browser
+            const browsers = db.prepare(`
+                SELECT browser as name, count(*) as count
+                FROM utm_clicks
+                ${whereSql}
+                GROUP BY browser
+                ORDER BY count DESC
+                LIMIT 6
+            `).all(...params).map(r => ({
+                name: r.name || "Desconhecido",
+                count: r.count,
+                percentage: totalClicks > 0 ? Math.round((r.count / totalClicks) * 100) : 0
+            }));
+
+            return {
+                totalClicks,
+                uniqueVisitors,
+                todayClicks,
+                totalConversions,
+                conversionRate,
+                sources,
+                campaigns,
+                mediums,
+                devices,
+                osList,
+                browsers
+            };
+        } catch (e) {
+            console.error("[DB] Erro ao obter métricas UTM:", e.message);
+            return {
+                totalClicks: 0,
+                uniqueVisitors: 0,
+                todayClicks: 0,
+                totalConversions: 0,
+                conversionRate: "0.0%",
+                sources: [],
+                campaigns: [],
+                mediums: [],
+                devices: [],
+                osList: [],
+                browsers: []
+            };
+        }
+    },
+
+    obterUltimosCliquesUTM(tenant = null, limite = 150, filtro = null) {
+        if (!useSqlite) return [];
+        try {
+            let whereClauses = [];
+            let params = [];
+
+            if (tenant && tenant !== "todos" && tenant !== "global") {
+                whereClauses.push("tenant = ?");
+                params.push(tenant);
+            }
+
+            if (filtro && typeof filtro === "string" && filtro.trim()) {
+                const term = `%${filtro.trim()}%`;
+                whereClauses.push("(utm_source LIKE ? OR utm_campaign LIKE ? OR utm_medium LIKE ? OR ip LIKE ? OR usuario_convertido LIKE ?)");
+                params.push(term, term, term, term, term);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+            const rows = db.prepare(`
+                SELECT id, tenant, ip, user_agent, device_type, browser, os,
+                       referrer, landing_url, utm_source, utm_medium, utm_campaign,
+                       utm_term, utm_content, raw_query, converted_login, usuario_convertido,
+                       created_at, data_hora
+                FROM utm_clicks
+                ${whereSql}
+                ORDER BY id DESC
+                LIMIT ?
+            `).all(...params, limite);
+
+            return rows;
+        } catch (e) {
+            console.error("[DB] Erro ao obter últimos cliques UTM:", e.message);
+            return [];
+        }
+    },
+
+    marcarConversaoUTM(ip, usuario, tenant = "default") {
+        if (!useSqlite || !ip) return false;
+        try {
+            const janela = Date.now() - 86400000;
+            const click = db.prepare(`
+                SELECT id FROM utm_clicks
+                WHERE (ip = ? OR ip LIKE ?) AND created_at >= ?
+                ORDER BY id DESC
+                LIMIT 1
+            `).get(ip, `${ip.split(",")[0].trim()}%`, janela);
+
+            if (click) {
+                db.prepare(`
+                    UPDATE utm_clicks
+                    SET converted_login = 1, usuario_convertido = ?
+                    WHERE id = ?
+                `).run(usuario || "", click.id);
+                console.log(`[UTM CONVERSÃO] 🎯 Clique #${click.id} marcado como convertido para usuário: ${usuario}`);
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error("[DB] Erro ao marcar conversão UTM:", e.message);
+            return false;
+        }
+    },
+
+    limparCliquesUTM(tenant = null) {
+        if (!useSqlite) return false;
+        try {
+            if (tenant && tenant !== "todos" && tenant !== "global") {
+                db.prepare("DELETE FROM utm_clicks WHERE tenant = ?;").run(tenant);
+            } else {
+                db.exec("DELETE FROM utm_clicks;");
+            }
+            console.log("[UTM] 🧹 Tabela utm_clicks limpa com sucesso.");
+            return true;
+        } catch (e) {
+            console.error("[DB] Erro ao limpar cliques UTM:", e.message);
+            return false;
+        }
     }
 };

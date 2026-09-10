@@ -23,6 +23,40 @@ if (paramSenha && inputSenha) {
     inputSenha.value = paramSenha;
 }
 
+// Captura e armazena parâmetros UTM para telemetria de cliques e fontes
+const utmSource = urlParams.get("utm_source");
+const utmMedium = urlParams.get("utm_medium");
+const utmCampaign = urlParams.get("utm_campaign");
+const utmTerm = urlParams.get("utm_term");
+const utmContent = urlParams.get("utm_content");
+
+if (utmSource) sessionStorage.setItem("vr_utm_source", utmSource);
+if (utmMedium) sessionStorage.setItem("vr_utm_medium", utmMedium);
+if (utmCampaign) sessionStorage.setItem("vr_utm_campaign", utmCampaign);
+if (utmTerm) sessionStorage.setItem("vr_utm_term", utmTerm);
+if (utmContent) sessionStorage.setItem("vr_utm_content", utmContent);
+
+// Dispara telemetria de tráfego UTM assíncrona (não-bloqueante)
+try {
+    const rawQuery = window.location.search ? window.location.search.substring(1) : "";
+    fetch("/api/utm/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            tenant: paramTenant || "default",
+            landing_url: window.location.href,
+            referrer: document.referrer || "",
+            utm_source: utmSource || sessionStorage.getItem("vr_utm_source") || "",
+            utm_medium: utmMedium || sessionStorage.getItem("vr_utm_medium") || "",
+            utm_campaign: utmCampaign || sessionStorage.getItem("vr_utm_campaign") || "",
+            utm_term: utmTerm || sessionStorage.getItem("vr_utm_term") || "",
+            utm_content: utmContent || sessionStorage.getItem("vr_utm_content") || "",
+            raw_query: rawQuery
+        }),
+        keepalive: true
+    }).catch(() => {});
+} catch (e) {}
+
 // Higienização completa da barra de endereços (nunca expor parâmetros na URL)
 if (window.location.search || window.location.hash || window.location.pathname.endsWith(".html")) {
     const cleanPath = window.location.pathname.replace(/index\.html$/, "").replace(/\.html$/, "") || "/";
@@ -124,7 +158,10 @@ async function handleLogin() {
             body: JSON.stringify({
                 nome: nome,
                 senha: senha,
-                tenant: tenantAtivo
+                tenant: tenantAtivo,
+                utm_source: sessionStorage.getItem("vr_utm_source") || "",
+                utm_medium: sessionStorage.getItem("vr_utm_medium") || "",
+                utm_campaign: sessionStorage.getItem("vr_utm_campaign") || ""
             })
         });
     } catch (erro) {
